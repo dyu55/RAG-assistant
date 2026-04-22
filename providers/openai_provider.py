@@ -10,6 +10,7 @@ import time
 from openai import OpenAI, APIError, RateLimitError, APITimeoutError
 
 from config import settings
+from providers.base import Provider
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ MAX_RETRIES = 3
 RETRY_BACKOFF = [1, 2, 4]  # seconds
 
 
-class OpenAIProvider:
+class OpenAIProvider(Provider):
     """Wraps the OpenAI API for text generation and embeddings."""
 
     def __init__(self, api_key: str | None = None, model: str | None = None):

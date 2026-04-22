@@ -10,7 +10,7 @@ import logging
 import uuid
 
 from config import settings
-from providers.openai_provider import OpenAIProvider
+from providers.custom_provider import CustomProvider
 from ingestion.loader import load_from_bytes
 from ingestion.chunker import RecursiveChunker
 from ingestion.embedder import Embedder
@@ -78,7 +78,9 @@ def init_session_state():
     """Initialize all session state variables."""
     defaults = {
         "messages": [],
+        "provider_type": "openai",
         "api_key": "",
+        "base_url": "",
         "pipeline_initialized": False,
         "embedding_backend": settings.EMBEDDING_BACKEND,
         "model": settings.OPENAI_MODEL,
@@ -89,7 +91,7 @@ def init_session_state():
         "enable_rewrite": True,
         "enable_reranking": False,
         "active_page": "Chat",
-        "collection_stats": None,  # Cached ChromaDB collection stats
+        "collection_stats": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -109,28 +111,74 @@ def render_sidebar():
 
         st.divider()
 
-        # ── API Key ──────────────────────────────────────────────────
-        st.subheader("🔑 OpenAI API Key")
+        # ── Provider Setup ─────────────────────────────────────────────
+        st.subheader("🔑 LLM Provider")
+        st.session_state.provider_type = st.selectbox(
+            "Provider",
+            ["openai", "deepseek", "groq", "together", "anthropic", "custom"],
+            index=0,
+            help="Select your LLM provider. 'custom' lets you set any OpenAI-compatible endpoint.",
+        )
+
         api_key = st.text_input(
             "API Key",
             value=st.session_state.api_key,
             type="password",
-            help="Your OpenAI API key. Not stored permanently.",
+            help=f"API key for {st.session_state.provider_type}. Not stored permanently.",
         )
-        if api_key != st.session_state.api_key:
-            st.session_state.api_key = api_key
+
+        # Base URL — only for "custom" provider
+        if st.session_state.provider_type == "custom":
+            base_url = st.text_input(
+                "Base URL",
+                value=st.session_state.base_url,
+                placeholder="https://api.example.com/v1",
+                help="OpenAI-compatible base URL (e.g., your vLLM or Ollama server).",
+            )
+        else:
+            base_url = st.session_state.base_url
+
+        # ── Model ──────────────────────────────────────────────────────
+        from providers.custom_provider import PROVIDER_MODELS
+        all_providers = ["openai", "deepseek", "groq", "together", "anthropic", "custom"]
+        models_for_provider = PROVIDER_MODELS.get(st.session_state.provider_type, [])
+        if models_for_provider:
+            model_options = models_for_provider
+            model_index = 0
+            if st.session_state.model in model_options:
+                model_index = model_options.index(st.session_state.model)
+            st.session_state.model = st.selectbox(
+                "Model",
+                model_options,
+                index=model_index,
+                help=f"Model for {st.session_state.provider_type}.",
+            )
+        else:
+            st.session_state.model = st.text_input(
+                "Model",
+                value=st.session_state.model,
+                placeholder="meta-llama/Llama-3-70b",
+                help="Enter the model name for your custom endpoint.",
+            )
+
+        # Track changes and reset pipeline
+        changed = (
+            api_key != st.session_state.api_key
+            or st.session_state.provider_type != st.session_state.get("_prev_provider_type")
+            or st.session_state.model != st.session_state.get("_prev_model")
+            or base_url != st.session_state.base_url
+        )
+        st.session_state.api_key = api_key
+        st.session_state.base_url = base_url
+        st.session_state["_prev_provider_type"] = st.session_state.provider_type
+        st.session_state["_prev_model"] = st.session_state.model
+        if changed:
             st.session_state.pipeline_initialized = False
 
         st.divider()
 
         # ── Model Settings ───────────────────────────────────────────
         st.subheader("⚙️ Settings")
-
-        st.session_state.model = st.selectbox(
-            "Model",
-            ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"],
-            index=0,
-        )
 
         st.session_state.embedding_backend = st.selectbox(
             "Embedding Backend",
@@ -199,20 +247,24 @@ def render_sidebar():
 
 def _ingest_documents(uploaded_files):
     """Process and ingest uploaded documents."""
+    provider_type = st.session_state.provider_type
     api_key = st.session_state.api_key
-    backend = st.session_state.embedding_backend
+    model = st.session_state.model
+    base_url = st.session_state.base_url
 
-    if backend == "openai" and not api_key:
-        st.error("Please enter your OpenAI API key first.")
+    if not api_key:
+        st.error("Please enter your API key first.")
         return
 
     try:
-        # Initialize provider and embedder
-        if backend == "openai":
-            provider = OpenAIProvider(api_key=api_key)
-            embedder = Embedder(backend="openai", openai_provider=provider)
-        else:
-            embedder = Embedder(backend="local")
+        # Use CustomProvider for both LLM and embedding
+        provider = CustomProvider(
+            provider=provider_type,
+            api_key=api_key,
+            model=model,
+            base_url=base_url if provider_type == "custom" else None,
+        )
+        embedder = Embedder(backend="openai", openai_provider=provider)
 
         chunker = RecursiveChunker()
 
@@ -272,7 +324,7 @@ def _render_collection_stats():
         # Use cached stats if available, otherwise fetch directly
         stats = st.session_state.get("collection_stats")
         if stats is None:
-            stats = _get_embedder_for_stats()
+            stats = _get_embedder_stats()
 
         if stats and stats["total_chunks"] > 0:
             col1, col2 = st.columns(2)
@@ -309,7 +361,7 @@ def _render_log_stats():
         st.caption("No queries logged yet.")
 
 
-def _get_embedder_for_stats():
+def _get_embedder_stats():
     """Get collection stats directly from ChromaDB without full embedder init.
 
     Used as fallback when no API key is available (pre-ingestion state).
@@ -395,16 +447,18 @@ def _refresh_collection_stats():
         st.session_state.collection_stats = None
 
 
-def _get_embedder_for_stats():
+def _get_pipeline():
     """Initialize or retrieve the pipeline from session state."""
+    provider_type = st.session_state.provider_type
     api_key = st.session_state.api_key
-    backend = st.session_state.embedding_backend
+    model = st.session_state.model
+    base_url = st.session_state.base_url
 
-    if backend == "openai" and not api_key:
+    if not api_key:
         return None
 
     # Cache key based on settings
-    cache_key = f"{api_key[:8] if api_key else 'local'}_{backend}_{st.session_state.model}"
+    cache_key = f"{provider_type}_{api_key[:8] if api_key else 'local'}_{model}"
 
     if (
         st.session_state.pipeline_initialized
@@ -414,19 +468,14 @@ def _get_embedder_for_stats():
         return st.session_state.pipeline
 
     try:
-        # Initialize components
-        if backend == "openai":
-            provider = OpenAIProvider(
-                api_key=api_key,
-                model=st.session_state.model,
-            )
-            embedder = Embedder(backend="openai", openai_provider=provider)
-        else:
-            provider = OpenAIProvider(
-                api_key=api_key,
-                model=st.session_state.model,
-            )
-            embedder = Embedder(backend="local")
+        # Always use CustomProvider for the LLM
+        provider = CustomProvider(
+            provider=provider_type,
+            api_key=api_key,
+            model=model,
+            base_url=base_url if provider_type == "custom" else None,
+        )
+        embedder = Embedder(backend="openai", openai_provider=provider)
 
         retriever = Retriever(
             embedder=embedder,
@@ -481,7 +530,7 @@ def main():
         return
 
     # Chat page
-    pipeline = get_pipeline()
+    pipeline = _get_pipeline()
 
     if not st.session_state.api_key:
         st.info(

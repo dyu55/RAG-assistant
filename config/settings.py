@@ -13,15 +13,19 @@ load_dotenv()
 # ── Project Root ──────────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).parent.parent
 
-# ── OpenAI ────────────────────────────────────────────────────────────────────
+# ── LLM Provider ──────────────────────────────────────────────────────────────
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
 
-# ── Embedding Backend ─────────────────────────────────────────────────────────
+# Embedding model and backend
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+EMBEDDING_BACKEND = os.getenv("EMBEDDING_BACKEND", "openai")
+# Optional: custom OpenAI-compatible embedding endpoint (e.g., vLLM, Ollama)
+EMBEDDING_BASE_URL = os.getenv("EMBEDDING_BASE_URL", "")
+
+# ── Embedding Backend ──────────────────────────────────────────────────────────
 # "openai" uses OpenAI API embeddings
 # "local" uses sentence-transformers/all-MiniLM-L6-v2 (free, no API key needed)
-EMBEDDING_BACKEND = os.getenv("EMBEDDING_BACKEND", "openai")
 LOCAL_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
 # ── Chunking ──────────────────────────────────────────────────────────────────
