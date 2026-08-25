@@ -2,11 +2,22 @@
 Pipeline Orchestrator.
 Wires all layers together: retrieval → generation → reliability → logging.
 Single entry point: pipeline.run(query) → PipelineResult.
+
+Hybrid (GraphRAG) mode
+----------------------
+When a `GraphRetriever` is provided, the pipeline runs vector and graph
+retrieval in parallel (they are both I/O bound). The graph retrieval may
+be skipped when the `QueryRouter` decides the question is purely local.
+
+The merged chunks preserve their `source` field so the generator and the
+reliability layer can distinguish vector hits (`[V N]`) from graph hits
+(`[G N]`) and community reports (`[C N]`).
 """
 from __future__ import annotations
 
 import time
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from core.retriever import Retriever, RetrievedChunk
@@ -47,7 +58,10 @@ class PipelineResult:
     should_abstain: bool = False
     abstention_message: str | None = None
 
-    # Observability
+    # Routing & observability
+    route_mode: str = "vector-only"
+    route_confidence: float = 0.0
+    route_reason: str = ""
     latency_ms: dict = field(default_factory=dict)
     total_latency_ms: float = 0.0
     model: str = ""
@@ -69,10 +83,19 @@ class PipelineResult:
             "display_answer": self.display_answer,
             "should_abstain": self.should_abstain,
             "abstention_message": self.abstention_message,
+            "route_mode": self.route_mode,
+            "route_confidence": self.route_confidence,
+            "route_reason": self.route_reason,
             "num_chunks_retrieved": len(self.retrieved_chunks),
             "retrieval_scores": [c.score for c in self.retrieved_chunks],
+            "sources_used": [c.retrieval_source for c in self.retrieved_chunks],
             "citations": [
-                {"source_index": c.source_index, "chunk_id": c.chunk_id, "quote": c.quote}
+                {
+                    "source_index": c.source_index,
+                    "chunk_id": c.chunk_id,
+                    "quote": c.quote,
+                    "source_type": c.source_type,
+                }
                 for c in self.citations
             ],
             "reliability": {
@@ -83,6 +106,7 @@ class PipelineResult:
                 "should_abstain": self.reliability.should_abstain if self.reliability else None,
                 "abstention_reason": self.reliability.abstention_reason if self.reliability else None,
                 "verdict": self.reliability.verdict if self.reliability else None,
+                "sources_used": self.reliability.sources_used if self.reliability else [],
                 "details": self.reliability.details if self.reliability else None,
             },
             "latency_ms": self.latency_ms,
@@ -94,7 +118,7 @@ class PipelineResult:
 class Pipeline:
     """
     Main RAG pipeline orchestrator.
-    query → query_rewrite → retrieval → reranking → generation → reliability checks → result
+    query → query_rewrite → routing → (vector ‖ graph) → reranking → generation → reliability → result
     """
 
     def __init__(
@@ -104,12 +128,18 @@ class Pipeline:
         reliability_checker: ReliabilityChecker | None = None,
         query_handler: QueryHandler | None = None,
         query_logger=None,
+        # Optional GraphRAG components. When `graph_retriever` is None
+        # the pipeline behaves exactly as it did before this change.
+        graph_retriever=None,
+        router=None,
     ):
         self.retriever = retriever
         self.generator = generator
         self.reliability_checker = reliability_checker or ReliabilityChecker()
         self.query_handler = query_handler
         self.query_logger = query_logger
+        self.graph_retriever = graph_retriever
+        self.router = router
 
     def run(
         self,
@@ -150,13 +180,21 @@ class Pipeline:
                 logger.warning(f"Query processing failed, using original: {e}")
             result.latency_ms["query_processing"] = round((time.time() - t0) * 1000, 1)
 
-        # ── Layer 1: Retrieval ────────────────────────────────────────────
+        # ── Layer 0.5: Route decision ─────────────────────────────────────
+        route = self._decide_route(retrieval_query)
+        result.route_mode = route.mode.value
+        result.route_confidence = route.confidence
+        result.route_reason = route.reason
+
+        # ── Layer 1: Retrieval (hybrid) ───────────────────────────────────
         t0 = time.time()
+        chunks: list[RetrievedChunk] = []
         try:
-            chunks = self.retriever.retrieve(
+            chunks = self._hybrid_retrieve(
                 retrieval_query,
                 top_k=top_k,
                 enable_reranking=enable_reranking,
+                route=route,
             )
             result.retrieved_chunks = chunks
         except Exception as e:
@@ -222,7 +260,106 @@ class Pipeline:
         logger.info(
             f"Pipeline complete: {result.reliability.verdict_emoji if result.reliability else '?'} "
             f"confidence={result.reliability.confidence if result.reliability else 'N/A'} "
-            f"latency={result.total_latency_ms}ms"
+            f"route={result.route_mode} latency={result.total_latency_ms}ms"
         )
 
         return result
+
+    # ── Hybrid retrieval helpers ─────────────────────────────────────────────
+
+    def _decide_route(self, query: str):
+        """Return a RouteDecision. Defaults to vector-only when no router."""
+        if self.router is None:
+            from graph.router import RouteDecision, RouteMode
+            return RouteDecision(mode=RouteMode.LOCAL, reason="No router configured")
+
+        try:
+            return self.router.route(query)
+        except Exception as e:
+            logger.warning(f"Router failed ({e}); defaulting to local")
+            from graph.router import RouteDecision, RouteMode
+            return RouteDecision(
+                mode=RouteMode.LOCAL,
+                confidence=0.0,
+                reason=f"Router error: {e}",
+            )
+
+    def _hybrid_retrieve(
+        self,
+        query: str,
+        top_k: int | None,
+        enable_reranking: bool,
+        route,
+    ) -> list[RetrievedChunk]:
+        """Run vector + graph retrievers in parallel when applicable."""
+        tasks: dict = {}
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            if route.run_vector:
+                tasks["vector"] = pool.submit(
+                    self._safe_vector_retrieve, query, top_k, enable_reranking
+                )
+            if route.run_graph_local and self.graph_retriever is not None:
+                tasks["graph_local"] = pool.submit(
+                    self._safe_graph_local, query
+                )
+            if route.run_graph_global and self.graph_retriever is not None:
+                tasks["graph_global"] = pool.submit(
+                    self._safe_graph_global, query
+                )
+
+            results: dict[str, list[RetrievedChunk]] = {}
+            for name, fut in tasks.items():
+                try:
+                    results[name] = fut.result(timeout=60) or []
+                except Exception as e:
+                    logger.warning(f"{name} retrieval failed: {e}")
+                    results[name] = []
+
+        merged: list[RetrievedChunk] = []
+        seen_ids: set[str] = set()
+
+        # Community chunks first when present — they are the *answer*,
+        # not supplementary evidence, so they should be cited prominently.
+        for c in results.get("graph_global", []):
+            if c.chunk_id in seen_ids:
+                continue
+            merged.append(c)
+            seen_ids.add(c.chunk_id)
+
+        for c in results.get("vector", []):
+            if c.chunk_id in seen_ids:
+                continue
+            merged.append(c)
+            seen_ids.add(c.chunk_id)
+
+        for c in results.get("graph_local", []):
+            if c.chunk_id in seen_ids:
+                continue
+            merged.append(c)
+            seen_ids.add(c.chunk_id)
+
+        return merged
+
+    def _safe_vector_retrieve(self, query, top_k, enable_reranking) -> list[RetrievedChunk]:
+        try:
+            return self.retriever.retrieve(
+                query, top_k=top_k, enable_reranking=enable_reranking
+            )
+        except Exception as e:
+            logger.warning(f"Vector retrieval failed: {e}")
+            return []
+
+    def _safe_graph_local(self, query) -> list[RetrievedChunk]:
+        try:
+            return self.graph_retriever.local_search(query)
+        except Exception as e:
+            logger.warning(f"Graph local retrieval failed: {e}")
+            return []
+
+    def _safe_graph_global(self, query) -> list[RetrievedChunk]:
+        try:
+            return self.graph_retriever.global_search(query)
+        except Exception as e:
+            logger.warning(f"Graph global retrieval failed: {e}")
+            return []

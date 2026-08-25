@@ -160,8 +160,8 @@ class TestGenerator:
         # Verify the prompt passed to the LLM
         call_args = provider.generate_json.call_args
         prompt = call_args.kwargs.get("prompt") or call_args[1].get("prompt")
-        assert "[Source 1]" in prompt
-        assert "[Source 2]" in prompt
+        assert "[V1]" in prompt
+        assert "[V2]" in prompt
         assert "First source text" in prompt
         assert "Second source text" in prompt
         assert "chunk_id: c1" in prompt  # Chunk ID included

@@ -59,3 +59,23 @@ CHROMA_COLLECTION_NAME = os.getenv("CHROMA_COLLECTION_NAME", "rag_documents")
 
 # ── Supported File Types ──────────────────────────────────────────────────────
 SUPPORTED_FILE_TYPES = {".pdf", ".md", ".txt", ".html"}
+
+# ── GraphRAG / Neo4j ───────────────────────────────────────────────────────────
+USE_GRAPH_RAG = os.getenv("USE_GRAPH_RAG", "true").lower() == "true"
+GRAPH_RAG_MODE = os.getenv("GRAPH_RAG_MODE", "auto")  # off | auto | local | global | both
+NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
+NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "neo4j")
+NEO4J_DATABASE = os.getenv("NEO4J_DATABASE", "neo4j")
+
+COMMUNITY_LEVELS = int(os.getenv("COMMUNITY_LEVELS", "3"))
+GRAPH_LOCAL_TOPK = int(os.getenv("GRAPH_LOCAL_TOPK", "5"))
+GRAPH_LOCAL_HOPS = int(os.getenv("GRAPH_LOCAL_HOPS", "2"))
+GRAPH_GLOBAL_TOP_COMMUNITIES = int(os.getenv("GRAPH_GLOBAL_TOP_COMMUNITIES", "5"))
+GRAPH_REBUILD_THRESHOLD = int(os.getenv("GRAPH_REBUILD_THRESHOLD", "100"))
+
+# Citation prefixes used by the generator. [V] = vector, [G] = graph traversal,
+# [C] = community report. The plan proposes this format.
+CITATION_PREFIX_VECTOR = "V"
+CITATION_PREFIX_GRAPH = "G"
+CITATION_PREFIX_COMMUNITY = "C"

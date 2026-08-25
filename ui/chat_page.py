@@ -88,11 +88,11 @@ def render_chat_page(
             if result.processed_query and result.processed_query.was_rewritten:
                 _render_rewrite_info(result)
 
-            # Show sources
+            # Show sources (color-coded by retrieval path)
             if result.retrieved_chunks:
                 _render_sources(result)
 
-            # Show latency
+            # Show latency + route info
             latency_parts = []
             if "query_processing" in result.latency_ms:
                 latency_parts.append(f"rewrite: {result.latency_ms['query_processing']:.0f}ms")
@@ -100,9 +100,14 @@ def render_chat_page(
             latency_parts.append(f"generation: {result.latency_ms.get('generation', 0):.0f}ms")
             latency_parts.append(f"reliability: {result.latency_ms.get('reliability', 0):.0f}ms")
 
+            route_label = f"route: {result.route_mode}"
+            if result.reliability and result.reliability.sources_used:
+                src = " + ".join(result.reliability.sources_used)
+                route_label += f" ({src})"
+
             st.caption(
                 f"⏱️ Total: {result.total_latency_ms:.0f}ms "
-                f"({', '.join(latency_parts)})"
+                f"({', '.join(latency_parts)}) · {route_label}"
             )
 
         # Save to history
@@ -125,12 +130,35 @@ def _render_rewrite_info(result: PipelineResult) -> None:
 
 
 def _render_sources(result: PipelineResult) -> None:
-    """Render retrieved sources as an expandable panel."""
+    """Render retrieved sources as an expandable panel.
+
+    Each source is color-coded by retrieval path:
+    - vector chunks      → 🔵
+    - graph traversal    → 🟣
+    - community report   → 🟢
+    """
     with st.expander(
         f"📚 Sources ({len(result.retrieved_chunks)} chunks retrieved)",
         expanded=False,
     ):
         for i, chunk in enumerate(result.retrieved_chunks, 1):
+            # Build a citation label that matches the generator's prefix scheme.
+            prefix = {
+                "vector": "V",
+                "graph": "G",
+                "community": "C",
+            }.get(chunk.retrieval_source, "V")
+            path_icon = {
+                "vector": "🔵",
+                "graph": "🟣",
+                "community": "🟢",
+            }.get(chunk.retrieval_source, "🔵")
+            path_label = {
+                "vector": "vector",
+                "graph": "graph",
+                "community": "community",
+            }.get(chunk.retrieval_source, "vector")
+
             # Show both similarity and rerank scores if available
             score_label = f"Score: {chunk.score:.3f}"
             if chunk.rerank_score >= 0:
@@ -141,7 +169,7 @@ def _render_sources(result: PipelineResult) -> None:
 
             score_color = "🟢" if effective >= 0.7 else "🟡" if effective >= 0.5 else "🔴"
             st.markdown(
-                f"**[Source {i}]** {score_color} {score_label} — "
+                f"**[{prefix}{i}]** {path_icon} {path_label} · {score_color} {score_label} — "
                 f"*{chunk.source}*"
             )
             st.text(chunk.text[:400] + ("..." if len(chunk.text) > 400 else ""))

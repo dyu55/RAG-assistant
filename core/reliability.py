@@ -70,6 +70,10 @@ class ReliabilityReport:
     grounding_details: list[GroundingDetail] = field(default_factory=list)
     details: dict = field(default_factory=dict)
 
+    # Retrieval paths used to answer this question.
+    # Subset of {"vector", "graph", "community"}.
+    sources_used: list[str] = field(default_factory=list)
+
     @property
     def verdict(self) -> str:
         """Human-readable verdict."""
@@ -153,6 +157,8 @@ class ReliabilityChecker:
             unsupported_ratio=unsupported_ratio,
         )
 
+        sources_used = sorted({c.retrieval_source for c in chunks})
+
         report = ReliabilityReport(
             citation_score=round(citation_score, 3),
             grounding_score=round(grounding_score, 3),
@@ -174,6 +180,7 @@ class ReliabilityChecker:
                 "unsupported_count": unsupported_count,
                 "unsupported_ratio": round(unsupported_ratio, 3),
             },
+            sources_used=sources_used,
         )
 
         logger.info(
@@ -380,7 +387,7 @@ class ReliabilityChecker:
                 continue
 
             # Skip sentences that are just citation references
-            clean = re.sub(r'\[Source \d+\]', '', sentence).strip()
+            clean = re.sub(r'\[(?:Source|[VGC]) ?\d+\]', '', sentence).strip()
             if len(clean.split()) < 3:
                 continue
 
@@ -407,7 +414,7 @@ class ReliabilityChecker:
         # Remove markdown formatting
         clean = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)  # bold
         clean = re.sub(r'\*([^*]+)\*', r'\1', clean)      # italic
-        clean = re.sub(r'\[Source \d+\]', '', clean)       # citations
+        clean = re.sub(r'\[(?:Source|[VGC]) ?\d+\]', '', clean)  # citations
 
         # Split by sentence-ending punctuation
         sentences = re.split(r'(?<=[.!?])\s+', clean)

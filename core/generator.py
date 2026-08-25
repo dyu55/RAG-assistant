@@ -2,6 +2,12 @@
 Answer Generator.
 Produces structured, citation-aware answers constrained to retrieved context.
 This is NOT freeform generation — the LLM is forced to cite sources and admit uncertainty.
+
+The sources may come from three paths:
+- Vector chunks       → cite as `[V N]`
+- Graph-walk chunks   → cite as `[G N]`
+- Community reports   → cite as `[C N]`
+The chunk_id in each citation is the chunk_id from the corresponding source.
 """
 from __future__ import annotations
 
@@ -9,7 +15,7 @@ import logging
 from dataclasses import dataclass, field
 
 from core.retriever import RetrievedChunk
-from providers.openai_provider import OpenAIProvider
+from providers.base import Provider
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +24,11 @@ SYSTEM_PROMPT = """You are a precise, reliable knowledge assistant. Your role is
 
 STRICT RULES:
 1. ONLY use information from the provided context to answer. Do NOT use your own knowledge.
-2. Cite your sources using [Source N] notation inline in your answer, where N corresponds to the source number.
+2. Cite your sources inline. Each source is numbered with a prefix that tells you its origin:
+   - `[V N]` = vector-retrieved document chunk (passage from an uploaded file)
+   - `[G N]` = graph traversal chunk (a relationship between entities)
+   - `[C N]` = community report chunk (a synthesized summary of a topic)
+   Use the exact prefix-letter and number shown in the source header.
 3. If the context does not contain enough information to answer the question, you MUST say "I don't have enough evidence to answer this question based on the available documents."
 4. NEVER fabricate or hallucinate information that is not in the context.
 5. If you are uncertain, express your uncertainty clearly.
@@ -26,11 +36,11 @@ STRICT RULES:
 
 You MUST respond with a valid JSON object in this exact format:
 {
-    "answer": "Your answer text with inline [Source N] citations...",
+    "answer": "Your answer text with inline [V N] / [G N] / [C N] citations...",
     "citations": [
         {
             "source_index": 1,
-            "chunk_id": "the chunk_id from the source",
+            "chunk_id": "the chunk_id from the source header",
             "quote": "exact or near-exact quote from the source that supports your claim"
         }
     ],
@@ -52,6 +62,9 @@ class Citation:
     source_index: int
     chunk_id: str
     quote: str
+    # Origin of the cited chunk: "vector", "graph", or "community".
+    # Populated automatically from the RetrievedChunk.metadata.
+    source_type: str = "vector"
 
 
 @dataclass
@@ -71,7 +84,7 @@ class GeneratedAnswer:
 class Generator:
     """Generates constrained, citation-aware answers using retrieved context."""
 
-    def __init__(self, provider: OpenAIProvider):
+    def __init__(self, provider: Provider):
         self.provider = provider
 
     def generate(
@@ -122,8 +135,9 @@ class Generator:
         """Build the user prompt with numbered source contexts."""
         context_parts = []
         for i, chunk in enumerate(chunks, 1):
+            source_label = self._label_for(chunk, i)
             context_parts.append(
-                f"[Source {i}] (chunk_id: {chunk.chunk_id}, file: {chunk.source}, score: {chunk.score})\n"
+                f"[{source_label}] (chunk_id: {chunk.chunk_id}, file: {chunk.source}, score: {chunk.score})\n"
                 f"{chunk.text}"
             )
 
@@ -135,6 +149,17 @@ class Generator:
             f"USER QUESTION: {query}\n\n"
             f"Based ONLY on the context documents above, provide your answer as a JSON object."
         )
+
+    @staticmethod
+    def _label_for(chunk: RetrievedChunk, index: int) -> str:
+        """Return the citation label for this chunk: `V1`, `G3`, `C7`, etc."""
+        src = chunk.retrieval_source
+        prefix_map = {
+            "vector": "V",
+            "graph": "G",
+            "community": "C",
+        }
+        return f"{prefix_map.get(src, 'V')}{index}"
 
     def _parse_response(
         self, raw: dict, chunks: list[RetrievedChunk]
@@ -149,11 +174,17 @@ class Generator:
             if not chunk_id and 1 <= source_idx <= len(chunks):
                 chunk_id = chunks[source_idx - 1].chunk_id
 
+            # Look up the source type so downstream UI can render badges.
+            source_type = "vector"
+            if 1 <= source_idx <= len(chunks):
+                source_type = chunks[source_idx - 1].retrieval_source
+
             citations.append(
                 Citation(
                     source_index=source_idx,
                     chunk_id=chunk_id,
                     quote=cit.get("quote", ""),
+                    source_type=source_type,
                 )
             )
 

@@ -234,6 +234,11 @@ def render_sidebar():
         if uploaded_files and st.button("📥 Ingest Documents", type="primary"):
             _ingest_documents(uploaded_files)
 
+        # ── Graph RAG ──────────────────────────────────────────────────
+        st.divider()
+        st.subheader("🕸️ Graph RAG")
+        _render_graph_rag_panel()
+
         # ── Collection Stats ─────────────────────────────────────────
         st.divider()
         st.subheader("📊 Knowledge Base")
@@ -243,6 +248,127 @@ def render_sidebar():
         st.divider()
         st.subheader("📈 Query Stats")
         _render_log_stats()
+
+
+def _render_graph_rag_panel():
+    """Sidebar panel: Neo4j connection status, mode selector, rebuild."""
+    from config import settings
+    from graph.neo4j_client import Neo4jClient
+
+    if "graph_rag_mode" not in st.session_state:
+        st.session_state.graph_rag_mode = settings.GRAPH_RAG_MODE
+
+    st.session_state.graph_rag_mode = st.selectbox(
+        "Mode",
+        ["auto", "off", "local", "global", "both"],
+        index=["auto", "off", "local", "global", "both"].index(
+            st.session_state.graph_rag_mode
+            if st.session_state.graph_rag_mode in ("auto", "off", "local", "global", "both")
+            else "auto"
+        ),
+        help="auto = LLM-routed; off = vector-only; local/global/both = force one path.",
+    )
+
+    client = Neo4jClient()
+    available = False
+    try:
+        available = client.ping()
+    except Exception:
+        available = False
+
+    if available:
+        try:
+            stats = client.stats()
+            cols = st.columns(3)
+            with cols[0]:
+                st.metric("Entities", stats.get("entities", 0))
+            with cols[1]:
+                st.metric("Relations", stats.get("relations", 0))
+            with cols[2]:
+                st.metric("Communities", stats.get("communities", 0))
+        except Exception:
+            pass
+    else:
+        st.caption(
+            f"⚠️ Neo4j not reachable at `{settings.NEO4J_URI}`. "
+            "Vector-only mode will be used."
+        )
+
+    cols = st.columns(2)
+    with cols[0]:
+        rebuild_disabled = not available
+        if st.button("🔄 Rebuild graph", disabled=rebuild_disabled, use_container_width=True):
+            _rebuild_graph()
+    with cols[1]:
+        if st.button("🧠 Refresh summaries", disabled=not available, use_container_width=True):
+            _refresh_summaries()
+
+
+def _rebuild_graph():
+    """Wipe and rebuild the Neo4j graph from existing ChromaDB chunks."""
+    from ingestion.graph_indexer import GraphIndexer
+
+    api_key = st.session_state.api_key
+    if not api_key:
+        st.error("Please enter your API key first.")
+        return
+    try:
+        provider = CustomProvider(
+            provider=st.session_state.provider_type,
+            api_key=api_key,
+            model=st.session_state.model,
+            base_url=st.session_state.base_url
+            if st.session_state.provider_type == "custom"
+            else None,
+        )
+        with st.spinner("Rebuilding knowledge graph (entity extraction + community detection)…"):
+            report = GraphIndexer(provider).rebuild()
+        if report.errors:
+            st.warning(
+                "Graph rebuild completed with issues:\n"
+                + "\n".join(f"- {e}" for e in report.errors)
+            )
+        else:
+            st.success(
+                f"✅ Graph rebuilt: {report.new_entities} entities, "
+                f"{report.new_relations} relations, "
+                f"{report.communities} communities "
+                f"in {report.elapsed_ms / 1000:.1f}s"
+            )
+    except Exception as e:
+        st.error(f"Graph rebuild failed: {e}")
+
+
+def _refresh_summaries():
+    """Re-run community summarization without re-detecting communities."""
+    from ingestion.graph_indexer import GraphIndexer
+
+    api_key = st.session_state.api_key
+    if not api_key:
+        st.error("Please enter your API key first.")
+        return
+    try:
+        provider = CustomProvider(
+            provider=st.session_state.provider_type,
+            api_key=api_key,
+            model=st.session_state.model,
+            base_url=st.session_state.base_url
+            if st.session_state.provider_type == "custom"
+            else None,
+        )
+        with st.spinner("Refreshing community summaries…"):
+            report = GraphIndexer(provider).summarize()
+        if report.errors:
+            st.warning(
+                "Summary refresh completed with issues:\n"
+                + "\n".join(f"- {e}" for e in report.errors)
+            )
+        else:
+            st.success(
+                f"✅ Refreshed {report.summarized_communities} community summaries"
+            )
+    except Exception as e:
+        st.error(f"Summary refresh failed: {e}")
 
 
 def _ingest_documents(uploaded_files):
@@ -270,6 +396,7 @@ def _ingest_documents(uploaded_files):
 
         progress = st.progress(0, text="Processing documents...")
         total_chunks = 0
+        all_chunks = []
 
         for i, file in enumerate(uploaded_files):
             progress.progress(
@@ -294,6 +421,7 @@ def _ingest_documents(uploaded_files):
                 doc_id=doc_id,
                 metadata=doc.metadata,
             )
+            all_chunks.extend(chunks)
 
             # Ingest into ChromaDB
             count = embedder.ingest(chunks)
@@ -309,6 +437,40 @@ def _ingest_documents(uploaded_files):
 
         # Refresh cached collection stats
         _refresh_collection_stats()
+
+        # Build/update the Neo4j knowledge graph (GraphRAG).
+        if all_chunks and settings.USE_GRAPH_RAG:
+            try:
+                from ingestion.graph_indexer import GraphIndexer
+
+                indexer = GraphIndexer(provider=provider)
+                if not indexer.is_available():
+                    st.info(
+                        f"ℹ️ Neo4j not reachable at `{settings.NEO4J_URI}` — "
+                        "graph RAG skipped; vector search still active."
+                    )
+                else:
+                    progress.progress(
+                        0.5,
+                        text="Extracting entities & relations for knowledge graph…",
+                    )
+                    graph_report = indexer.index_chunks(all_chunks)
+                    if graph_report.errors:
+                        st.warning(
+                            "Graph indexing completed with issues:\n"
+                            + "\n".join(f"- {e}" for e in graph_report.errors)
+                        )
+                    else:
+                        st.success(
+                            f"🕸️ Graph indexed: +{graph_report.new_entities} entities, "
+                            f"+{graph_report.new_relations} relations "
+                            f"({graph_report.communities} communities, "
+                            f"{graph_report.summarized_communities} summarized) "
+                            f"in {graph_report.elapsed_ms / 1000:.1f}s"
+                        )
+            except Exception as e:
+                logger.exception("Graph indexing failed during ingestion")
+                st.warning(f"Graph indexing failed (vector search unaffected): {e}")
 
     except Exception as e:
         st.error(f"❌ Ingestion failed: {str(e)}")
@@ -490,12 +652,41 @@ def _get_pipeline():
         query_handler = QueryHandler(provider=provider)
         query_logger = QueryLogger()
 
+        # ── Optional GraphRAG wiring ─────────────────────────────────
+        graph_retriever = None
+        router = None
+        mode_setting = st.session_state.get("graph_rag_mode", settings.GRAPH_RAG_MODE)
+        if settings.USE_GRAPH_RAG and mode_setting != "off":
+            try:
+                from graph.neo4j_client import Neo4jClient
+                from graph.retriever import GraphRetriever
+                from graph.router import QueryRouter
+
+                neo4j = Neo4jClient()
+                if neo4j.ping():
+                    graph_retriever = GraphRetriever(
+                        neo4j=neo4j,
+                        provider=provider,
+                        embedder=embedder,
+                    )
+                    router = QueryRouter(provider=provider, mode_setting=mode_setting)
+                    logger.info(
+                        f"GraphRAG enabled (mode={mode_setting}); "
+                        f"entities={neo4j.stats().get('entities', 0)}"
+                    )
+                else:
+                    logger.info("Neo4j not reachable; running vector-only")
+            except Exception as e:
+                logger.warning(f"GraphRAG initialization failed: {e}")
+
         pipeline = Pipeline(
             retriever=retriever,
             generator=generator,
             reliability_checker=reliability_checker,
             query_handler=query_handler,
             query_logger=query_logger,
+            graph_retriever=graph_retriever,
+            router=router,
         )
 
         st.session_state.pipeline = pipeline

@@ -2,6 +2,12 @@
 Retriever.
 Performs vector similarity search against ChromaDB to find relevant document chunks.
 Supports optional LLM-based reranking for improved precision.
+
+Each `RetrievedChunk` carries a `source` field that identifies which
+retrieval path produced it:
+- "vector"     — ChromaDB cosine similarity (the default)
+- "graph"     — entity-anchored subgraph traversal (GraphRAG local search)
+- "community" — map-reduce over community summaries (GraphRAG global search)
 """
 from __future__ import annotations
 
@@ -31,7 +37,7 @@ Respond with ONLY a JSON object:
 
 @dataclass
 class RetrievedChunk:
-    """A chunk retrieved from the vector store with its relevance score."""
+    """A chunk retrieved from a vector store or graph traversal with its relevance score."""
     chunk_id: str
     text: str
     score: float              # Similarity score (higher = more relevant)
@@ -40,7 +46,24 @@ class RetrievedChunk:
 
     @property
     def source(self) -> str:
-        return self.metadata.get("filename", "unknown")
+        """Filename of the originating document (vector path) or graph label."""
+        # Prefer an explicit filename stored by the embedder. Graph/community
+        # chunks typically don't have one, so we fall back to a label.
+        return self.metadata.get("filename") or self.metadata.get("source", "vector")
+
+    @property
+    def retrieval_source(self) -> str:
+        """Which retrieval path produced this chunk.
+
+        One of:
+        - "vector"     — ChromaDB cosine similarity (the default)
+        - "graph"      — entity-anchored subgraph traversal (GraphRAG local)
+        - "community"  — map-reduce over community summaries (GraphRAG global)
+        """
+        src = self.metadata.get("source")
+        if src in {"vector", "graph", "community"}:
+            return src
+        return "vector"
 
     @property
     def effective_score(self) -> float:

@@ -1,8 +1,8 @@
 """
 Base provider interface for LLM and embedding backends.
 
-Concrete providers should keep network/client-specific behavior in their own
-modules while exposing this small surface to the RAG pipeline.
+All concrete LLM providers (OpenAI, Anthropic, Ollama, DeepSeek, etc.)
+implement this interface so the pipeline remains backend-agnostic.
 """
 from __future__ import annotations
 
