@@ -65,7 +65,7 @@ USE_GRAPH_RAG = os.getenv("USE_GRAPH_RAG", "true").lower() == "true"
 GRAPH_RAG_MODE = os.getenv("GRAPH_RAG_MODE", "auto")  # off | auto | local | global | both
 NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
 NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
-NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "neo4j")
+NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "")
 NEO4J_DATABASE = os.getenv("NEO4J_DATABASE", "neo4j")
 
 COMMUNITY_LEVELS = int(os.getenv("COMMUNITY_LEVELS", "3"))

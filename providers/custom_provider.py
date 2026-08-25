@@ -94,7 +94,7 @@ class CustomProvider(Provider):
 
     Usage:
         # With a preset provider
-        provider = CustomProvider(provider="groq", api_key="gsk_...")
+        provider = CustomProvider(provider="groq", api_key="YOUR_API_KEY")
 
         # With a custom OpenAI-compatible endpoint
         provider = CustomProvider(
