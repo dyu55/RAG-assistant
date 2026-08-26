@@ -1,3 +1,14 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rag-assistant"
+version = "0.2.0"
+description = "Reliable GraphRAG & Vector Knowledge Retrieval Assistant"
+readme = "README.md"
+requires-python = ">=3.9"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
@@ -10,13 +21,13 @@ addopts = [
 ]
 
 [tool.coverage.run]
-source = ["core", "ingestion", "evaluation", "providers", "ui"]
+source = ["core", "graph", "ingestion", "evaluation", "providers", "ui"]
 omit = [
     "*/tests/*",
     "*/__pycache__/*",
     "*/.venv/*",
     "*/venv/*",
-    "ui/app.py",  # Streamlit entry point, not unit-testable
+    "app.py",  # Streamlit UI entry point
 ]
 
 [tool.coverage.report]
@@ -28,3 +39,31 @@ exclude_lines = [
 ]
 show_missing = true
 skip_empty = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "data",
+    "logs",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "B008",  # do not perform function calls in argument defaults
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["config", "core", "graph", "ingestion", "evaluation", "providers", "ui"]

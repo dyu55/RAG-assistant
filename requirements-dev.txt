@@ -1,0 +1,13 @@
+# Development & CI Dependencies
+-r requirements.txt
+
+# Linting & Code Formatting
+ruff>=0.5.0
+
+# Security Auditing
+bandit>=1.7.9
+
+# Testing & Coverage
+pytest>=8.0.0
+pytest-cov>=4.0.0
+pytest-mock>=3.14.0

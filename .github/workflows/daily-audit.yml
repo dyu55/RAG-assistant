@@ -1,0 +1,37 @@
+name: Daily Automated Audit & Regression
+
+on:
+  schedule:
+    # Runs at 05:00 UTC every day
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+
+jobs:
+  daily-regression:
+    name: Daily Full Regression & Quality Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Run Full Regression Test Suite
+        run: |
+          pytest --cov=core --cov=graph --cov=ingestion --cov=evaluation --cov=providers \
+                 --cov-report=term-missing \
+                 tests/
+
+      - name: Security & Dependency Vulnerability Check
+        run: |
+          bandit -r core/ graph/ ingestion/ evaluation/ providers/ -ll -q
