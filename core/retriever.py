@@ -71,6 +71,64 @@ class RetrievedChunk:
         return self.rerank_score if self.rerank_score >= 0 else self.score
 
 
+def reciprocal_rank_fusion(
+    ranked_lists: list[list[RetrievedChunk]],
+    weights: list[float] | None = None,
+    k: int = 60,
+) -> list[RetrievedChunk]:
+    """Fuse multiple ranked lists of retrieved chunks using Reciprocal Rank Fusion (RRF).
+
+    RRF combines rankings from disparate retrieval strategies (dense vector, sparse/BM25,
+    graph traversal) without needing score calibration:
+        RRF_Score(d) = sum_{m in M} ( w_m / (k + rank_m(d)) )
+
+    Args:
+        ranked_lists: List of ranked RetrievedChunk lists from different retrievers.
+        weights: Optional list of relative importance weights for each retriever.
+        k: Smoothing constant (industry standard is 60).
+
+    Returns:
+        Deduplicated and fused list of RetrievedChunk objects sorted by fused score descending.
+    """
+    if not ranked_lists:
+        return []
+
+    # Default equal weights if not specified
+    if weights is None or len(weights) != len(ranked_lists):
+        weights = [1.0] * len(ranked_lists)
+
+    fused_scores: dict[str, float] = {}
+    chunk_map: dict[str, RetrievedChunk] = {}
+
+    for weight, rlist in zip(weights, ranked_lists):
+        if not rlist:
+            continue
+        for rank_idx, chunk in enumerate(rlist, start=1):
+            cid = chunk.chunk_id
+            if cid not in chunk_map:
+                chunk_map[cid] = chunk
+            # Accumulate RRF score
+            fused_scores[cid] = fused_scores.get(cid, 0.0) + (weight / (k + rank_idx))
+
+    # Sort chunk_ids by fused RRF score descending
+    sorted_ids = sorted(fused_scores.keys(), key=lambda cid: fused_scores[cid], reverse=True)
+
+    result: list[RetrievedChunk] = []
+    for cid in sorted_ids:
+        orig = chunk_map[cid]
+        # Preserve original chunk properties, attach fused RRF score
+        fused_chunk = RetrievedChunk(
+            chunk_id=orig.chunk_id,
+            text=orig.text,
+            score=round(fused_scores[cid], 5),
+            rerank_score=orig.rerank_score,
+            metadata=dict(orig.metadata, rrf_score=round(fused_scores[cid], 5)),
+        )
+        result.append(fused_chunk)
+
+    return result
+
+
 class Retriever:
     """
     Retrieves relevant document chunks from ChromaDB via vector similarity search.

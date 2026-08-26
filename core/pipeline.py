@@ -329,28 +329,28 @@ class Pipeline:
                 if result is not None:
                     result.latency_ms[f"sub_{name}"] = round((time.time() - t_sub) * 1000, 1)
 
+        # Community chunks (Global Search) are macro-synthesized answers, prioritized first
+        global_chunks = results.get("graph_global", [])
+        vector_chunks = results.get("vector", [])
+        local_chunks = results.get("graph_local", [])
+
+        # Fuse vector and local graph rankings using Reciprocal Rank Fusion (RRF)
+        from core.retriever import reciprocal_rank_fusion
+        detail_lists = [l for l in [vector_chunks, local_chunks] if l]
+        fused_details = reciprocal_rank_fusion(detail_lists) if detail_lists else []
+
         merged: list[RetrievedChunk] = []
         seen_ids: set[str] = set()
 
-        # Community chunks first when present — they are the *answer*,
-        # not supplementary evidence, so they should be cited prominently.
-        for c in results.get("graph_global", []):
-            if c.chunk_id in seen_ids:
-                continue
-            merged.append(c)
-            seen_ids.add(c.chunk_id)
+        for c in global_chunks:
+            if c.chunk_id not in seen_ids:
+                merged.append(c)
+                seen_ids.add(c.chunk_id)
 
-        for c in results.get("vector", []):
-            if c.chunk_id in seen_ids:
-                continue
-            merged.append(c)
-            seen_ids.add(c.chunk_id)
-
-        for c in results.get("graph_local", []):
-            if c.chunk_id in seen_ids:
-                continue
-            merged.append(c)
-            seen_ids.add(c.chunk_id)
+        for c in fused_details:
+            if c.chunk_id not in seen_ids:
+                merged.append(c)
+                seen_ids.add(c.chunk_id)
 
         return merged
 
