@@ -148,6 +148,7 @@ class Pipeline:
         temperature: float = 0.3,
         enable_rewrite: bool = True,
         enable_reranking: bool = False,
+        one_shot_global: bool = True,
     ) -> PipelineResult:
         """
         Execute the full RAG pipeline.
@@ -158,6 +159,7 @@ class Pipeline:
             temperature: LLM temperature.
             enable_rewrite: Whether to rewrite vague queries.
             enable_reranking: Whether to LLM-rerank retrieved chunks.
+            one_shot_global: Whether to use fast one-shot synthesis for global community search.
 
         Returns:
             PipelineResult with answer, citations, reliability, and latency.
@@ -181,10 +183,12 @@ class Pipeline:
             result.latency_ms["query_processing"] = round((time.time() - t0) * 1000, 1)
 
         # ── Layer 0.5: Route decision ─────────────────────────────────────
+        t0 = time.time()
         route = self._decide_route(retrieval_query)
         result.route_mode = route.mode.value
         result.route_confidence = route.confidence
         result.route_reason = route.reason
+        result.latency_ms["route"] = round((time.time() - t0) * 1000, 1)
 
         # ── Layer 1: Retrieval (hybrid) ───────────────────────────────────
         t0 = time.time()
@@ -195,6 +199,8 @@ class Pipeline:
                 top_k=top_k,
                 enable_reranking=enable_reranking,
                 route=route,
+                one_shot_global=one_shot_global,
+                result=result,
             )
             result.retrieved_chunks = chunks
         except Exception as e:
@@ -260,7 +266,7 @@ class Pipeline:
         logger.info(
             f"Pipeline complete: {result.reliability.verdict_emoji if result.reliability else '?'} "
             f"confidence={result.reliability.confidence if result.reliability else 'N/A'} "
-            f"route={result.route_mode} latency={result.total_latency_ms}ms"
+            f"route={result.route_mode} latency={result.total_latency_ms}ms (route={result.latency_ms.get('route', 0)}ms, retrieval={result.latency_ms.get('retrieval', 0)}ms)"
         )
 
         return result
@@ -268,15 +274,17 @@ class Pipeline:
     # ── Hybrid retrieval helpers ─────────────────────────────────────────────
 
     def _decide_route(self, query: str):
-        """Return a RouteDecision. Defaults to vector-only when no router."""
-        if self.router is None:
-            from graph.router import RouteDecision, RouteMode
-            return RouteDecision(mode=RouteMode.LOCAL, reason="No router configured")
-
-        try:
+        """Invoke the QueryRouter, or fall back to LOCAL if unconfigured."""
+        if self.router is not None:
             return self.router.route(query)
+        try:
+            from graph.router import RouteDecision, RouteMode
+            return RouteDecision(
+                mode=RouteMode.LOCAL,
+                confidence=1.0,
+                reason="Default local route (No router configured)",
+            )
         except Exception as e:
-            logger.warning(f"Router failed ({e}); defaulting to local")
             from graph.router import RouteDecision, RouteMode
             return RouteDecision(
                 mode=RouteMode.LOCAL,
@@ -290,11 +298,13 @@ class Pipeline:
         top_k: int | None,
         enable_reranking: bool,
         route,
+        one_shot_global: bool = True,
+        result: PipelineResult | None = None,
     ) -> list[RetrievedChunk]:
         """Run vector + graph retrievers in parallel when applicable."""
         tasks: dict = {}
 
-        with ThreadPoolExecutor(max_workers=2) as pool:
+        with ThreadPoolExecutor(max_workers=3) as pool:
             if route.run_vector:
                 tasks["vector"] = pool.submit(
                     self._safe_vector_retrieve, query, top_k, enable_reranking
@@ -305,16 +315,19 @@ class Pipeline:
                 )
             if route.run_graph_global and self.graph_retriever is not None:
                 tasks["graph_global"] = pool.submit(
-                    self._safe_graph_global, query
+                    self._safe_graph_global, query, one_shot_global
                 )
 
             results: dict[str, list[RetrievedChunk]] = {}
             for name, fut in tasks.items():
+                t_sub = time.time()
                 try:
                     results[name] = fut.result(timeout=60) or []
                 except Exception as e:
                     logger.warning(f"{name} retrieval failed: {e}")
                     results[name] = []
+                if result is not None:
+                    result.latency_ms[f"sub_{name}"] = round((time.time() - t_sub) * 1000, 1)
 
         merged: list[RetrievedChunk] = []
         seen_ids: set[str] = set()
@@ -357,8 +370,12 @@ class Pipeline:
             logger.warning(f"Graph local retrieval failed: {e}")
             return []
 
-    def _safe_graph_global(self, query) -> list[RetrievedChunk]:
+    def _safe_graph_global(self, query, one_shot: bool = True) -> list[RetrievedChunk]:
         try:
+            import inspect
+            sig = inspect.signature(self.graph_retriever.global_search)
+            if "one_shot" in sig.parameters:
+                return self.graph_retriever.global_search(query, one_shot=one_shot)
             return self.graph_retriever.global_search(query)
         except Exception as e:
             logger.warning(f"Graph global retrieval failed: {e}")

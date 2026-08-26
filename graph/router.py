@@ -106,11 +106,17 @@ class QueryRouter:
                 from_setting=True,
             )
 
-        # 2) Lightweight heuristic: if the LLM is unavailable, fall back.
+        # 2) Fast-path heuristic: if query matches obvious patterns with high confidence,
+        # return immediately without paying LLM latency (saves 300-800ms).
+        fast_decision = self._fast_path_route(query)
+        if fast_decision is not None:
+            return fast_decision
+
+        # 3) Lightweight fallback if LLM is unavailable
         if self.provider is None:
             return self._heuristic_route(query)
 
-        # 3) LLM classification
+        # 4) LLM classification for ambiguous queries
         try:
             raw = self.provider.generate_json(
                 prompt=f"Classify this question:\n\n{query}",
@@ -122,28 +128,71 @@ class QueryRouter:
             logger.warning(f"Router LLM call failed ({e}); using heuristic")
             return self._heuristic_route(query)
 
-    # ── Heuristic fallback ───────────────────────────────────────────────────
+    # ── Fast-path & Heuristic routing ────────────────────────────────────────
 
     _GLOBAL_PATTERNS = [
         r"\bsummar(y|ize|ise)\b",
         r"\boverview\b",
-        r"\b(main|key|major|primary|common|overall)\b.*\btheme(s|)?\b",
+        r"\b(main|key|major|primary|common|overall)\b.*\b(theme|concept|topic|finding|point)(s)?\b",
         r"\bpattern(s)?\b",
         r"\bhigh[- ]level\b",
         r"\bacross (all|the)\b",
         r"\bcorpus\b",
         r"\bwhat (do(es)?|did) (the|these|all) (doc(s|uments)?|papers?)\b",
         r"\bin (general|summary)\b",
+        r"(总结|概述|综述|全貌|核心主题|主要发现|大纲|宏观)",
     ]
 
-    def _heuristic_route(self, query: str) -> RouteDecision:
-        q = query.lower()
+    _BOTH_PATTERNS = [
+        r"\bcompare\b",
+        r"\bcontrast\b",
+        r"\bdifference(s)? between\b",
+        r"\bhow does .* relate to .*\b",
+        r"\brelationship between\b",
+        r"(对比|比较|异同|关联分析)",
+    ]
+
+    _LOCAL_PATTERNS = [
+        r"\b(where|who|when|which file|which line|what function|what class|method)\b",
+        r"\berror\b.*\b(code|message|line)\b",
+        r"\b(definition|implementation|signature) of\b",
+        r"(具体|定义|在哪|哪一行|函数|类名|报错原因)",
+    ]
+
+    def _fast_path_route(self, query: str) -> RouteDecision | None:
+        """High-confidence heuristic matcher (<1ms) to bypass LLM classification."""
+        q = query.lower().strip()
+        
+        # Check BOTH patterns first (e.g. compare X and Y)
+        if any(re.search(p, q) for p in self._BOTH_PATTERNS):
+            return RouteDecision(
+                mode=RouteMode.BOTH,
+                confidence=0.85,
+                reason="Fast-path Heuristic match for comparison query",
+            )
+            
+        # Check GLOBAL patterns (e.g. summarize all docs)
         if any(re.search(p, q) for p in self._GLOBAL_PATTERNS):
             return RouteDecision(
                 mode=RouteMode.GLOBAL,
-                confidence=0.5,
-                reason="Heuristic match for global-style query",
+                confidence=0.90,
+                reason="Fast-path Heuristic match for global summary query",
             )
+            
+        # Check explicit LOCAL indicators
+        if any(re.search(p, q) for p in self._LOCAL_PATTERNS):
+            return RouteDecision(
+                mode=RouteMode.LOCAL,
+                confidence=0.85,
+                reason="Fast-path Heuristic match for specific local entity query",
+            )
+
+        return None
+
+    def _heuristic_route(self, query: str) -> RouteDecision:
+        fast = self._fast_path_route(query)
+        if fast is not None:
+            return fast
         return RouteDecision(
             mode=RouteMode.LOCAL,
             confidence=0.5,

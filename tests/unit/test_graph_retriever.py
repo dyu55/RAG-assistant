@@ -180,7 +180,7 @@ class TestGraphRetrieverGlobalSearch:
         ]
 
         gr = GraphRetriever(neo4j=fake_neo4j, provider=mock_provider)
-        chunks = gr.global_search("summarize GraphRAG")
+        chunks = gr.global_search("summarize GraphRAG", one_shot=False)
 
         assert len(chunks) == 1
         chunk = chunks[0]

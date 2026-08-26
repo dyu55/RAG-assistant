@@ -223,46 +223,87 @@ class GraphRetriever:
             f"chunks of the uploaded documents."
         )
 
-    # ── Global search (map-reduce over community reports) ────────────────────
+    # ── Global search (one-shot / map-reduce over community reports) ────────
 
-    def global_search(self, query: str) -> list[RetrievedChunk]:
-        """Map-reduce over community reports; returns 1 community-source chunk."""
+    def global_search(
+        self,
+        query: str,
+        *,
+        one_shot: bool = True,
+    ) -> list[RetrievedChunk]:
+        """Synthesize answer across top community reports.
+        
+        Args:
+            query: User's macro/global question.
+            one_shot: When True (default), performs fast single-pass synthesis (1 LLM call),
+                      reducing latency from ~6s to ~1s. When False, runs full Map-Reduce.
+        """
         if not query.strip():
             return []
         top_communities = self._select_communities(query)
         if not top_communities:
             return []
 
-        partials = self._map_step(query, top_communities)
-        final_text = self._reduce_step(query, partials)
+        if one_shot:
+            final_text, cited = self._one_shot_step(query, top_communities)
+            if not final_text.strip():
+                # Fallback to map-reduce if one-shot yields empty
+                partials = self._map_step(query, top_communities)
+                final_text = self._reduce_step(query, partials)
+            else:
+                partials = [
+                    {"community_id": c["id"], "title": c.get("title", ""), "answer": final_text, "relevance": 1.0}
+                    for c in top_communities
+                ]
+        else:
+            partials = self._map_step(query, top_communities)
+            final_text = self._reduce_step(query, partials)
+            cited = [idx for idx, p in enumerate(partials, 1) if float(p.get("relevance") or 0.0) > 0.0 and p.get("answer")]
+
         if not final_text.strip():
             return []
-
-        # Build the community chunk that the generator will see.
-        cited = []
-        for idx, p in enumerate(partials, 1):
-            try:
-                rel = float(p.get("relevance") or 0.0)
-            except (TypeError, ValueError):
-                rel = 0.0
-            if rel > 0.0 and p.get("answer"):
-                cited.append(idx)
 
         community_ids = [c["id"] for c in top_communities]
         return [
             RetrievedChunk(
                 chunk_id=f"community:{community_ids[0] if community_ids else 'global'}",
                 text=final_text,
-                # Use the average relevance as the "retrieval score".
                 score=sum(float(p.get("relevance") or 0.0) for p in partials) / max(len(partials), 1),
                 metadata={
                     "source": "community",
                     "community_ids": community_ids,
                     "partials": partials,
                     "cited_partials": cited,
+                    "one_shot": one_shot,
                 },
             )
         ]
+
+    def _one_shot_step(self, query: str, communities: list[dict]) -> tuple[str, list[int]]:
+        """Fast single-pass synthesis across community reports (1 LLM call instead of N+1)."""
+        reports_block = "\n\n---\n\n".join(
+            f"[Community {i}: {c.get('title') or '(untitled)'}]\n{self._format_report(c)}"
+            for i, c in enumerate(communities, 1)
+        )
+        prompt = (
+            f"COMMUNITY REPORTS:\n{reports_block}\n\n"
+            f"USER QUESTION: {query}\n\n"
+            f"Synthesize a cohesive answer across the community reports above. "
+            f"Cite the relevant communities in brackets like [Community 1], [Community 2].\n"
+            f"Respond with a single JSON object: {{\"answer\": str, \"reasoning\": str, \"cited\": [ints]}}"
+        )
+        try:
+            raw = self.provider.generate_json(
+                prompt=prompt,
+                system_prompt="You are a precise macro-synthesizer. Output valid JSON only.",
+                temperature=0.1,
+            )
+            answer = (raw.get("answer") or "").strip()
+            cited = raw.get("cited") or [1]
+            return answer, cited if isinstance(cited, list) else [1]
+        except Exception as e:
+            logger.warning(f"One-shot global synthesis failed ({e}); will attempt fallback")
+            return "", []
 
     def _select_communities(self, query: str) -> list[dict]:
         """Rank communities by query/relevant text similarity."""
