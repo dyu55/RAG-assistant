@@ -3,9 +3,11 @@ Reliability Panel Component.
 Renders the visual reliability scorecard in Streamlit.
 Shows citation score, grounding score, confidence, unsupported claims, and verdict.
 """
+
 from __future__ import annotations
 
 import streamlit as st
+
 from core.reliability import ReliabilityReport
 
 
@@ -18,9 +20,7 @@ def render_reliability_panel(report: ReliabilityReport) -> None:
         "abstained": ("🚫 Abstained", "error"),
     }
 
-    label, alert_type = verdict_labels.get(
-        report.verdict, ("❓ Unknown", "info")
-    )
+    label, alert_type = verdict_labels.get(report.verdict, ("❓ Unknown", "info"))
 
     with st.expander(f"📊 Reliability Report — {label}", expanded=False):
         # ── Score Cards (2 rows × 2 columns for readability) ──────────
@@ -72,11 +72,13 @@ def render_reliability_panel(report: ReliabilityReport) -> None:
             st.markdown(f"**⚠️ Unsupported Claims ({len(unsupported)}):**")
             for claim in unsupported:
                 st.markdown(
-                    f"🔴 \"{claim.claim[:120]}{'...' if len(claim.claim) > 120 else ''}\" "
+                    f'🔴 "{claim.claim[:120]}{"..." if len(claim.claim) > 120 else ""}" '
                     f"— best match: {claim.best_match_score:.0%}"
                 )
         elif report.unsupported_claims:
-            st.markdown(f"✅ All {len(report.unsupported_claims)} claims are supported by source documents.")
+            st.markdown(
+                f"✅ All {len(report.unsupported_claims)} claims are supported by source documents."
+            )
 
         # ── Raw Details ───────────────────────────────────────────────
         with st.expander("🔍 Raw Details"):

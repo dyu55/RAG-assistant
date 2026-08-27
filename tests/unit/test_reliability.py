@@ -2,18 +2,17 @@
 Unit tests for core/reliability.py
 Tests the reliability engine — the core differentiator of the RAG system.
 """
+
 from __future__ import annotations
 
 import pytest
+
+from core.generator import Citation, GeneratedAnswer
 from core.reliability import (
     ReliabilityChecker,
     ReliabilityReport,
-    GroundingDetail,
-    UnsupportedClaim,
 )
-from core.generator import GeneratedAnswer, Citation
 from core.retriever import RetrievedChunk
-
 
 # ── Factories ────────────────────────────────────────────────────────────────────
 
@@ -107,9 +106,7 @@ class TestGroundingVerification:
         cit = make_citation(1, "c1", "Python is a programming language")
         answer = make_answer("Python is a programming language.", citations=[cit])
 
-        score, details = self.checker._check_grounding(
-            answer, {chunk.chunk_id: chunk}
-        )
+        score, details = self.checker._check_grounding(answer, {chunk.chunk_id: chunk})
 
         assert score == 1.0
         assert len(details) == 1
@@ -122,9 +119,7 @@ class TestGroundingVerification:
         cit = make_citation(1, "c1", "JavaScript was created by Brendan Eich in 1995.")
         answer = make_answer("JavaScript was created by Brendan Eich.", citations=[cit])
 
-        score, details = self.checker._check_grounding(
-            answer, {chunk.chunk_id: chunk}
-        )
+        score, details = self.checker._check_grounding(answer, {chunk.chunk_id: chunk})
 
         assert score < 0.5  # Low score for unrelated quote
         assert details[0].match_ratio < 0.5
@@ -135,9 +130,7 @@ class TestGroundingVerification:
         cit = make_citation(1, "nonexistent-id", "Some quote.")
         answer = make_answer("Answer [Source 1].", citations=[cit])
 
-        score, details = self.checker._check_grounding(
-            answer, {chunk.chunk_id: chunk}
-        )
+        score, details = self.checker._check_grounding(answer, {chunk.chunk_id: chunk})
 
         assert score == 0.0
         assert details[0].match_ratio == 0.0
@@ -148,20 +141,18 @@ class TestGroundingVerification:
         cit = make_citation(1, "c1", "")
         answer = make_answer("Python [Source 1].", citations=[cit])
 
-        score, details = self.checker._check_grounding(
-            answer, {chunk.chunk_id: chunk}
-        )
+        score, details = self.checker._check_grounding(answer, {chunk.chunk_id: chunk})
 
         assert score == 0.0
 
     def test_partial_quote_match_returns_partial_score(self):
-        chunk = make_chunk("c1", "Python is a high-level programming language with dynamic semantics.")
+        chunk = make_chunk(
+            "c1", "Python is a high-level programming language with dynamic semantics."
+        )
         cit = make_citation(1, "c1", "Python is a high-level programming language.")
         answer = make_answer("Answer [Source 1].", citations=[cit])
 
-        score, details = self.checker._check_grounding(
-            answer, {chunk.chunk_id: chunk}
-        )
+        score, details = self.checker._check_grounding(answer, {chunk.chunk_id: chunk})
 
         assert 0.0 < score < 1.0
         assert details[0].match_ratio > 0.5  # Should be substantial match
@@ -173,9 +164,7 @@ class TestGroundingVerification:
         cit2 = make_citation(2, "c2", "Python was created by Guido van Rossum")
         answer = make_answer("Answer [Source 1][Source 2].", citations=[cit1, cit2])
 
-        score, details = self.checker._check_grounding(
-            answer, {c1.chunk_id: c1, c2.chunk_id: c2}
-        )
+        score, details = self.checker._check_grounding(answer, {c1.chunk_id: c1, c2.chunk_id: c2})
 
         assert score == 1.0  # Both exact matches
         assert len(details) == 2
@@ -207,8 +196,7 @@ class TestFuzzyMatch:
 
     def test_no_match(self):
         score = self.checker._fuzzy_match(
-            "The weather in Tokyo is sunny today",
-            "Python was created by Guido van Rossum in 1991"
+            "The weather in Tokyo is sunny today", "Python was created by Guido van Rossum in 1991"
         )
         assert score < 0.5  # Should be low for unrelated texts
 

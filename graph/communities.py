@@ -18,6 +18,7 @@ Two backends are supported, in priority order:
 
 Both paths produce the same output: a list of `CommunityLevel` objects.
 """
+
 from __future__ import annotations
 
 import logging
@@ -34,6 +35,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Community:
     """A single community at a single level."""
+
     id: str
     level: int
     members: list[str] = field(default_factory=list)  # normalized entity names
@@ -42,6 +44,7 @@ class Community:
 @dataclass
 class CommunityLevel:
     """All communities detected at a single level of the hierarchy."""
+
     level: int
     communities: list[Community] = field(default_factory=list)
 
@@ -73,9 +76,7 @@ class CommunityDetector:
                 self._persist(hierarchy)
                 return hierarchy
             except Exception as e:
-                logger.warning(
-                    f"GDS Leiden failed ({e}); falling back to python-igraph"
-                )
+                logger.warning(f"GDS Leiden failed ({e}); falling back to python-igraph")
 
         # Fallback path
         hierarchy = self._run_igraph_levels()
@@ -87,9 +88,7 @@ class CommunityDetector:
     def _try_gds(self) -> bool:
         """True iff the GDS plugin is installed in this Neo4j instance."""
         try:
-            rows = self.neo4j.execute_read(
-                "RETURN gds.version() AS v"
-            )
+            rows = self.neo4j.execute_read("RETURN gds.version() AS v")
             return bool(rows and rows[0].get("v"))
         except Exception as e:
             logger.debug(f"GDS not available: {e}")
@@ -249,11 +248,13 @@ class CommunityDetector:
         rows = []
         for level_obj in hierarchy:
             for c in level_obj.communities:
-                rows.append({
-                    "id": f"L{level_obj.level}-{c.id}-{uuid.uuid4().hex[:6]}",
-                    "level": level_obj.level,
-                    "members": c.members,
-                })
+                rows.append(
+                    {
+                        "id": f"L{level_obj.level}-{c.id}-{uuid.uuid4().hex[:6]}",
+                        "level": level_obj.level,
+                        "members": c.members,
+                    }
+                )
 
         if not rows:
             logger.info("CommunityDetector: no communities to write")
@@ -302,11 +303,13 @@ class CommunityDetector:
                         continue
                     overlap = len(pset.intersection(child.members))
                     if overlap >= 0.5 * len(child.members):
-                        rows.append({
-                            "parent": parent.id,
-                            "child": child.id,
-                            "overlap": overlap,
-                        })
+                        rows.append(
+                            {
+                                "parent": parent.id,
+                                "child": child.id,
+                                "overlap": overlap,
+                            }
+                        )
             if not rows:
                 continue
             self.neo4j.execute_write(

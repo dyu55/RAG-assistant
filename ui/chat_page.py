@@ -3,6 +3,7 @@ Chat Page.
 Main Q&A interface for the RAG assistant.
 Displays chat history with inline citations and reliability panels.
 """
+
 from __future__ import annotations
 
 import streamlit as st
@@ -52,13 +53,14 @@ def render_chat_page(
         # Check if documents are loaded
         if not pipeline.retriever.has_documents():
             no_docs_msg = (
-                "📄 **No documents loaded yet.** "
-                "Please upload documents using the sidebar first."
+                "📄 **No documents loaded yet.** Please upload documents using the sidebar first."
             )
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": no_docs_msg,
-            })
+            st.session_state.messages.append(
+                {
+                    "role": "assistant",
+                    "content": no_docs_msg,
+                }
+            )
             with st.chat_message("assistant"):
                 st.warning(no_docs_msg)
             return
@@ -111,11 +113,13 @@ def render_chat_page(
             )
 
         # Save to history
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": result.display_answer,
-            "pipeline_result": result,
-        })
+        st.session_state.messages.append(
+            {
+                "role": "assistant",
+                "content": result.display_answer,
+                "pipeline_result": result,
+            }
+        )
 
 
 def _render_rewrite_info(result: PipelineResult) -> None:

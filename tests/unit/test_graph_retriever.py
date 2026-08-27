@@ -5,15 +5,14 @@ builder, using a fake Neo4jClient so no live database is needed.
 The fake records every Cypher call so we can assert the right statements
 are issued and returns pre-canned rows for each query.
 """
+
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import Mock
 
 import pytest
 
 from graph.builder import GraphBuilder
-from graph.extractor import ExtractionResult, Entity, Relation
 from graph.neo4j_client import Neo4jClient
 from graph.retriever import GraphRetriever
 
@@ -69,10 +68,12 @@ def mock_provider():
 def mock_extractor(mock_provider):
     """EntityRelationExtractor wrapping a mock provider."""
     from graph.extractor import EntityRelationExtractor
+
     return EntityRelationExtractor(mock_provider)
 
 
 # ── GraphRetriever.local_search ───────────────────────────────────────────────
+
 
 class TestGraphRetrieverLocalSearch:
     def test_local_search_extracts_entities_and_runs_cypher(self, fake_neo4j, mock_provider):
@@ -143,6 +144,7 @@ class TestGraphRetrieverLocalSearch:
 
 # ── GraphRetriever.global_search (map-reduce) ─────────────────────────────────
 
+
 class TestGraphRetrieverGlobalSearch:
     def _communities(self):
         return [
@@ -170,13 +172,18 @@ class TestGraphRetrieverGlobalSearch:
         # Finally reduce: produces a single answer.
         fake_neo4j._read_responses = [self._communities()]
         mock_provider.generate_json.side_effect = [
-            {"answer": "Microsoft GraphRAG helps global QA.", "relevance": 0.9,
-             "reasoning": "directly relevant"},
-            {"answer": "Neo4j stores the graph.", "relevance": 0.4,
-             "reasoning": "tangential"},
-            {"answer": "Combined: Microsoft GraphRAG improves global QA [Community 1] "
-                       "and uses Neo4j [Community 2].",
-             "reasoning": "merged", "cited": [1, 2]},
+            {
+                "answer": "Microsoft GraphRAG helps global QA.",
+                "relevance": 0.9,
+                "reasoning": "directly relevant",
+            },
+            {"answer": "Neo4j stores the graph.", "relevance": 0.4, "reasoning": "tangential"},
+            {
+                "answer": "Combined: Microsoft GraphRAG improves global QA [Community 1] "
+                "and uses Neo4j [Community 2].",
+                "reasoning": "merged",
+                "cited": [1, 2],
+            },
         ]
 
         gr = GraphRetriever(neo4j=fake_neo4j, provider=mock_provider)
@@ -206,6 +213,7 @@ class TestGraphRetrieverGlobalSearch:
 
 # ── GraphBuilder ──────────────────────────────────────────────────────────────
 
+
 class TestGraphBuilder:
     def test_build_chunks_calls_upsert_per_chunk(self, fake_neo4j, mock_extractor):
         # First call: indexed_chunk_ids lookup → returns [] so all are processed.
@@ -219,9 +227,7 @@ class TestGraphBuilder:
                 {"name": "Alice", "type": "PERSON"},
                 {"name": "Bob", "type": "PERSON"},
             ],
-            "relations": [
-                {"source": "Alice", "target": "Bob", "predicate": "KNOWS"}
-            ],
+            "relations": [{"source": "Alice", "target": "Bob", "predicate": "KNOWS"}],
         }
 
         chunks = [

@@ -1,12 +1,16 @@
 """Unit tests for Reciprocal Rank Fusion (RRF) hybrid scoring."""
+
 from __future__ import annotations
 
 import pytest
+
 from core.retriever import RetrievedChunk, reciprocal_rank_fusion
 
 
 class TestReciprocalRankFusion:
-    def _create_chunk(self, chunk_id: str, text: str = "text", score: float = 0.8) -> RetrievedChunk:
+    def _create_chunk(
+        self, chunk_id: str, text: str = "text", score: float = 0.8
+    ) -> RetrievedChunk:
         return RetrievedChunk(
             chunk_id=chunk_id,
             text=text,

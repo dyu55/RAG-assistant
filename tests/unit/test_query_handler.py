@@ -2,11 +2,12 @@
 Unit tests for core/query_handler.py
 Tests the query preprocessing pipeline with mocked LLM.
 """
+
 from __future__ import annotations
 
-import pytest
 from unittest.mock import Mock
-from core.query_handler import QueryHandler, ProcessedQuery
+
+from core.query_handler import ProcessedQuery, QueryHandler
 
 
 class TestQueryHandlerNormalize:
@@ -76,7 +77,9 @@ class TestQueryHandlerProcess:
         """When provider is available and query is vague, rewrite is attempted."""
         mock_provider = Mock()
         # Return a distinctly different query
-        mock_provider.generate.return_value = "Retrieval-Augmented Generation (RAG) is a technique that combines..."
+        mock_provider.generate.return_value = (
+            "Retrieval-Augmented Generation (RAG) is a technique that combines..."
+        )
 
         handler = QueryHandler(provider=mock_provider)
         result = handler.process("what is rag", enable_rewrite=True)

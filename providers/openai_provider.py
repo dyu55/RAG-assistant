@@ -2,12 +2,13 @@
 OpenAI LLM Provider.
 Handles both text generation (chat completions) and embedding generation.
 """
+
 from __future__ import annotations
 
 import json
 import logging
-import time
-from openai import OpenAI, APIError, RateLimitError, APITimeoutError
+
+from openai import APIError, APITimeoutError, OpenAI, RateLimitError
 
 from config import settings
 from providers.base import Provider

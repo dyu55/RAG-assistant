@@ -1,8 +1,8 @@
 """Unit tests for Corrective RAG (CRAG) retrieval evaluation and query decomposition."""
+
 from __future__ import annotations
 
-import pytest
-from core.crag import CRAGEvaluator, CRAGAction
+from core.crag import CRAGAction, CRAGEvaluator
 from core.retriever import RetrievedChunk
 
 
@@ -53,7 +53,9 @@ class TestCRAGEvaluator:
     def test_decompose_and_expand_query(self):
         evaluator = CRAGEvaluator()
         # Comparison with 'and'
-        exp = evaluator.decompose_and_expand_query("Explain Transformer attention and LSTM recurrent cells")
+        exp = evaluator.decompose_and_expand_query(
+            "Explain Transformer attention and LSTM recurrent cells"
+        )
         assert len(exp) > 0
         assert any("Transformer attention" in q for q in exp)
 

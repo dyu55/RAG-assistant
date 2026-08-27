@@ -3,9 +3,9 @@ Unit tests for graph/router.py
 
 Tests explicit-mode override, heuristic fallback, and LLM parsing.
 """
+
 from __future__ import annotations
 
-import pytest
 from unittest.mock import Mock
 
 from graph.router import QueryRouter, RouteDecision, RouteMode

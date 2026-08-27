@@ -9,6 +9,7 @@ The sources may come from three paths:
 - Community reports   → cite as `[C N]`
 The chunk_id in each citation is the chunk_id from the corresponding source.
 """
+
 from __future__ import annotations
 
 import logging
@@ -59,6 +60,7 @@ CONFIDENCE SCALE:
 @dataclass
 class Citation:
     """A single citation linking an answer claim to a source chunk."""
+
     source_index: int
     chunk_id: str
     quote: str
@@ -70,6 +72,7 @@ class Citation:
 @dataclass
 class GeneratedAnswer:
     """Structured answer from the LLM with citations and confidence."""
+
     answer: str
     citations: list[Citation] = field(default_factory=list)
     self_confidence: float = 0.0
@@ -129,9 +132,7 @@ class Generator:
                 reasoning=f"Generation error: {str(e)}",
             )
 
-    def _build_context_prompt(
-        self, query: str, chunks: list[RetrievedChunk]
-    ) -> str:
+    def _build_context_prompt(self, query: str, chunks: list[RetrievedChunk]) -> str:
         """Build the user prompt with numbered source contexts."""
         context_parts = []
         for i, chunk in enumerate(chunks, 1):
@@ -161,9 +162,7 @@ class Generator:
         }
         return f"{prefix_map.get(src, 'V')}{index}"
 
-    def _parse_response(
-        self, raw: dict, chunks: list[RetrievedChunk]
-    ) -> GeneratedAnswer:
+    def _parse_response(self, raw: dict, chunks: list[RetrievedChunk]) -> GeneratedAnswer:
         """Parse the LLM's JSON response into a GeneratedAnswer."""
         citations = []
         for cit in raw.get("citations", []):

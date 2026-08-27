@@ -3,14 +3,11 @@ Unit tests for the citation prefix logic and the sources_used tracking
 on ReliabilityReport. These exercise the changes made to Generator and
 ReliabilityChecker to support GraphRAG.
 """
+
 from __future__ import annotations
 
-import pytest
-from unittest.mock import Mock
-
-from core.generator import Citation
+from core.generator import Citation, GeneratedAnswer
 from core.reliability import ReliabilityChecker
-from core.generator import GeneratedAnswer
 from core.retriever import RetrievedChunk
 
 
@@ -25,6 +22,7 @@ def _chunk(text, source="vector", chunk_id="c1"):
 
 def _label(chunk, idx):
     from core.generator import Generator
+
     return Generator._label_for(chunk, idx)
 
 
@@ -72,7 +70,9 @@ class TestReliabilitySourcesUsed:
         chunks = [_chunk("the answer is forty-two exactly", source="vector")]
         answer = GeneratedAnswer(
             answer="The answer is forty-two exactly according to [V1].",
-            citations=[Citation(source_index=1, chunk_id="c1", quote="forty-two", source_type="vector")],
+            citations=[
+                Citation(source_index=1, chunk_id="c1", quote="forty-two", source_type="vector")
+            ],
             self_confidence=0.9,
         )
         # Should not raise, should not count the citation as a claim

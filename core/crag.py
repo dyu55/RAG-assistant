@@ -8,6 +8,7 @@ Implements the 2026 SOTA CRAG pattern:
    - INCORRECT (confidence < 0.35): Retrieved context is insufficient; trigger fallback/abstention.
 3. Query Decomposition & Correction: Generates targeted sub-queries to rescue ambiguous retrievals.
 """
+
 from __future__ import annotations
 
 import logging
@@ -30,6 +31,7 @@ class CRAGAction(str, Enum):
 @dataclass
 class CRAGEvaluation:
     """Assessment result of retrieved context quality before generation."""
+
     action: CRAGAction
     confidence: float
     reason: str
@@ -79,11 +81,15 @@ class CRAGEvaluator:
         for c in chunks:
             # Base score from retriever
             base_score = float(c.effective_score)
-            
+
             # Keyword coverage bonus
             chunk_lower = c.text.lower()
-            overlap = sum(1 for t in q_tokens if t in chunk_lower) / max(len(q_tokens), 1) if q_tokens else 0.5
-            
+            overlap = (
+                sum(1 for t in q_tokens if t in chunk_lower) / max(len(q_tokens), 1)
+                if q_tokens
+                else 0.5
+            )
+
             # Blended relevance score: weighted blend bounded by base score
             blended = round(max(base_score * 0.85, 0.7 * base_score + 0.3 * overlap), 4)
             scores.append(blended)
@@ -127,9 +133,14 @@ class CRAGEvaluator:
             return []
 
         expanded = []
-        
+
         # 1. Strip question words
-        clean_q = re.sub(r"^(what is|how does|why does|where is|explain|summarize|tell me about)\s+", "", q, flags=re.IGNORECASE)
+        clean_q = re.sub(
+            r"^(what is|how does|why does|where is|explain|summarize|tell me about)\s+",
+            "",
+            q,
+            flags=re.IGNORECASE,
+        )
         if clean_q and clean_q.lower() != q.lower():
             expanded.append(clean_q.strip())
 

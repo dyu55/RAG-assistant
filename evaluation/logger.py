@@ -3,12 +3,13 @@ Query Logger.
 Logs every pipeline run as structured JSONL for post-hoc analysis.
 Each line in the log file is an independent JSON object.
 """
+
 from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 from config import settings
 
@@ -123,13 +124,7 @@ class QueryLogger:
 
         return {
             "total_queries": len(entries),
-            "avg_confidence": round(
-                sum(confidences) / max(len(confidences), 1), 3
-            ),
-            "abstention_rate": round(
-                abstentions / max(len(entries), 1), 3
-            ),
-            "avg_latency_ms": round(
-                sum(latencies) / max(len(latencies), 1), 1
-            ),
+            "avg_confidence": round(sum(confidences) / max(len(confidences), 1), 3),
+            "abstention_rate": round(abstentions / max(len(entries), 1), 3),
+            "avg_latency_ms": round(sum(latencies) / max(len(latencies), 1), 1),
         }

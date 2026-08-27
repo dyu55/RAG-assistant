@@ -16,12 +16,13 @@ chunks that mention each entity. `weight` is incremented every time the
 same (chunk, entity) or (entity, entity) fact is observed, which makes
 edge weights a useful retrieval signal.
 """
+
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
 
-from graph.extractor import EntityRelationExtractor, ExtractionResult, _normalize
+from graph.extractor import EntityRelationExtractor, ExtractionResult
 from graph.neo4j_client import Neo4jClient
 
 logger = logging.getLogger(__name__)
@@ -30,8 +31,9 @@ logger = logging.getLogger(__name__)
 @dataclass
 class BuildStats:
     """Summary returned after a `build_chunks` run, surfaced in the UI."""
+
     chunks_processed: int = 0
-    chunks_skipped: int = 0   # chunks already indexed (idempotent)
+    chunks_skipped: int = 0  # chunks already indexed (idempotent)
     entities_added: int = 0
     relations_added: int = 0
     errors: int = 0
@@ -80,7 +82,9 @@ class GraphBuilder:
             already = self._indexed_chunk_ids([c["chunk_id"] for c in chunks])
             stats.chunks_skipped = len(already)
 
-        to_process = [c for c in chunks if c["chunk_id"] not in (already if skip_already_indexed else set())]
+        to_process = [
+            c for c in chunks if c["chunk_id"] not in (already if skip_already_indexed else set())
+        ]
         if not to_process:
             logger.info(f"GraphBuilder: all {len(chunks)} chunks already indexed")
             return stats

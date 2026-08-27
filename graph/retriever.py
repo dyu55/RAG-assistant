@@ -17,12 +17,12 @@ slot into the existing pipeline without modification:
 The returned chunks always carry a `source` field that the generator
 and the UI can use to distinguish vector vs graph vs community hits.
 """
+
 from __future__ import annotations
 
 import logging
 import uuid
 from dataclasses import dataclass, field
-from typing import Iterable
 
 from config import settings
 from core.retriever import RetrievedChunk
@@ -71,6 +71,7 @@ Respond with a JSON object: {{"answer": str, "reasoning": str, "cited": [ints]}}
 @dataclass
 class GraphHit:
     """Internal representation of a single graph search result."""
+
     text: str
     score: float
     source: str  # "graph" or "community"
@@ -232,7 +233,7 @@ class GraphRetriever:
         one_shot: bool = True,
     ) -> list[RetrievedChunk]:
         """Synthesize answer across top community reports.
-        
+
         Args:
             query: User's macro/global question.
             one_shot: When True (default), performs fast single-pass synthesis (1 LLM call),
@@ -252,13 +253,22 @@ class GraphRetriever:
                 final_text = self._reduce_step(query, partials)
             else:
                 partials = [
-                    {"community_id": c["id"], "title": c.get("title", ""), "answer": final_text, "relevance": 1.0}
+                    {
+                        "community_id": c["id"],
+                        "title": c.get("title", ""),
+                        "answer": final_text,
+                        "relevance": 1.0,
+                    }
                     for c in top_communities
                 ]
         else:
             partials = self._map_step(query, top_communities)
             final_text = self._reduce_step(query, partials)
-            cited = [idx for idx, p in enumerate(partials, 1) if float(p.get("relevance") or 0.0) > 0.0 and p.get("answer")]
+            cited = [
+                idx
+                for idx, p in enumerate(partials, 1)
+                if float(p.get("relevance") or 0.0) > 0.0 and p.get("answer")
+            ]
 
         if not final_text.strip():
             return []
@@ -268,7 +278,8 @@ class GraphRetriever:
             RetrievedChunk(
                 chunk_id=f"community:{community_ids[0] if community_ids else 'global'}",
                 text=final_text,
-                score=sum(float(p.get("relevance") or 0.0) for p in partials) / max(len(partials), 1),
+                score=sum(float(p.get("relevance") or 0.0) for p in partials)
+                / max(len(partials), 1),
                 metadata={
                     "source": "community",
                     "community_ids": community_ids,
@@ -290,7 +301,7 @@ class GraphRetriever:
             f"USER QUESTION: {query}\n\n"
             f"Synthesize a cohesive answer across the community reports above. "
             f"Cite the relevant communities in brackets like [Community 1], [Community 2].\n"
-            f"Respond with a single JSON object: {{\"answer\": str, \"reasoning\": str, \"cited\": [ints]}}"
+            f'Respond with a single JSON object: {{"answer": str, "reasoning": str, "cited": [ints]}}'
         )
         try:
             raw = self.provider.generate_json(
@@ -323,19 +334,13 @@ class GraphRetriever:
             return []
         if self.embedder is None:
             # Without embeddings, fall back to keyword overlap.
-            scored = [
-                (self._keyword_score(query, r), r)
-                for r in rows
-            ]
+            scored = [(self._keyword_score(query, r), r) for r in rows]
         else:
             try:
                 scored = self._embedding_score(query, rows)
             except Exception as e:
                 logger.warning(f"Community embedding scoring failed: {e}")
-                scored = [
-                    (self._keyword_score(query, r), r)
-                    for r in rows
-                ]
+                scored = [(self._keyword_score(query, r), r) for r in rows]
 
         scored.sort(key=lambda x: x[0], reverse=True)
         top = [r for s, r in scored[: settings.GRAPH_GLOBAL_TOP_COMMUNITIES] if s > 0]
@@ -358,8 +363,7 @@ class GraphRetriever:
         import math
 
         texts = [
-            f"{(r.get('title') or '').strip()}\n{(r.get('summary') or '').strip()}"
-            for r in rows
+            f"{(r.get('title') or '').strip()}\n{(r.get('summary') or '').strip()}" for r in rows
         ]
         query_vec = self.embedder.embed_query(query)
         text_vecs = self.embedder._embed_fn(texts)
@@ -389,13 +393,15 @@ class GraphRetriever:
                 logger.warning(f"Map step failed for community {c.get('id')[:8]}: {e}")
                 raw = {"answer": "", "relevance": 0.0, "reasoning": str(e)}
 
-            partials.append({
-                "community_id": c.get("id"),
-                "title": c.get("title"),
-                "answer": raw.get("answer", "") or "",
-                "relevance": float(raw.get("relevance") or 0.0),
-                "reasoning": raw.get("reasoning", ""),
-            })
+            partials.append(
+                {
+                    "community_id": c.get("id"),
+                    "title": c.get("title"),
+                    "answer": raw.get("answer", "") or "",
+                    "relevance": float(raw.get("relevance") or 0.0),
+                    "reasoning": raw.get("reasoning", ""),
+                }
+            )
         return partials
 
     def _reduce_step(self, query: str, partials: list[dict]) -> str:

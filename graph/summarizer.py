@@ -8,6 +8,7 @@ We summarize leaves first (level 0) and then summarize higher-level
 communities using the summaries of their child communities as input,
 matching the GraphRAG paper's "roll up the hierarchy" pattern.
 """
+
 from __future__ import annotations
 
 import logging
@@ -111,9 +112,11 @@ class CommunitySummarizer:
 
         prompt = (
             "COMMUNITY MEMBERS:\n"
-            + ", ".join(sorted({m["name"] for m in payload["members"]})) + "\n\n"
+            + ", ".join(sorted({m["name"] for m in payload["members"]}))
+            + "\n\n"
             + "SAMPLE RELATIONS:\n"
-            + "\n".join(f"- {r}" for r in payload["relations"][:30]) + "\n\n"
+            + "\n".join(f"- {r}" for r in payload["relations"][:30])
+            + "\n\n"
             + "SAMPLE SOURCE CHUNKS (truncated):\n"
             + "\n---\n".join(payload["chunks"][:8])
         )
@@ -162,7 +165,9 @@ class CommunitySummarizer:
         relations: list[str] = []
         chunks: list[str] = []
         for r in rows:
-            members.append({"name": r.get("name"), "type": r.get("type"), "description": r.get("description")})
+            members.append(
+                {"name": r.get("name"), "type": r.get("type"), "description": r.get("description")}
+            )
             for rel in r.get("rels") or []:
                 if rel.get("p"):
                     relations.append(f"{rel.get('s')} -[{rel.get('p')}]-> {rel.get('t')}")

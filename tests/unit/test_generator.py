@@ -2,13 +2,13 @@
 Unit tests for core/generator.py
 Tests the answer generator with mocked LLM provider.
 """
+
 from __future__ import annotations
 
-import pytest
-from unittest.mock import Mock, MagicMock
-from core.generator import Generator, GeneratedAnswer, Citation
-from core.retriever import RetrievedChunk
+from unittest.mock import Mock
 
+from core.generator import Citation, GeneratedAnswer, Generator
+from core.retriever import RetrievedChunk
 
 # ── Factories ────────────────────────────────────────────────────────────────────
 
@@ -155,7 +155,7 @@ class TestGenerator:
             make_chunk("c2", "Second source text.", 0.8),
         ]
         gen = self._make_generator(provider)
-        result = gen.generate("What is this?", chunks)
+        _ = gen.generate("What is this?", chunks)
 
         # Verify the prompt passed to the LLM
         call_args = provider.generate_json.call_args
@@ -184,7 +184,7 @@ class TestGenerator:
             metadata={"filename": "python-guide.pdf"},
         )
         gen = self._make_generator(provider)
-        result = gen.generate("Question?", [chunk])
+        _ = gen.generate("Question?", [chunk])
 
         call_args = provider.generate_json.call_args
         prompt = call_args.kwargs.get("prompt") or call_args[1].get("prompt")

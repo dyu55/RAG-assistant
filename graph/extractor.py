@@ -10,6 +10,7 @@ normalize entity names (strip + collapse whitespace + lowercase) so that
 the same concept mentioned in different chunks deduplicates into a single
 node during the graph build step.
 """
+
 from __future__ import annotations
 
 import json
@@ -63,6 +64,7 @@ JSON SCHEMA:
 
 # ── Datatypes ─────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class Entity:
     name: str
@@ -93,6 +95,7 @@ class Relation:
 @dataclass
 class ExtractionResult:
     """Result of extracting from a single chunk."""
+
     entities: list[Entity] = field(default_factory=list)
     relations: list[Relation] = field(default_factory=list)
     raw: dict = field(default_factory=dict)
@@ -134,6 +137,7 @@ def _strip_markdown_fences(raw: str) -> str:
 
 
 # ── Main extractor class ──────────────────────────────────────────────────────
+
 
 class EntityRelationExtractor:
     """Extract entities + relations from text chunks via the existing Provider."""
@@ -177,9 +181,7 @@ class EntityRelationExtractor:
                 last_err = e
                 # Backoff before retry
                 time.sleep(0.5 * (attempt + 1))
-                logger.debug(
-                    f"Extraction attempt {attempt + 1} failed: {e}"
-                )
+                logger.debug(f"Extraction attempt {attempt + 1} failed: {e}")
         logger.warning(f"Extraction failed after retries: {last_err}")
         return ExtractionResult()
 

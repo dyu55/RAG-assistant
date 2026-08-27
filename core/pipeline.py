@@ -13,17 +13,18 @@ The merged chunks preserve their `source` field so the generator and the
 reliability layer can distinguish vector hits (`[V N]`) from graph hits
 (`[G N]`) and community reports (`[C N]`).
 """
+
 from __future__ import annotations
 
-import time
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
-from core.retriever import Retriever, RetrievedChunk
-from core.generator import Generator, GeneratedAnswer, Citation
+from core.generator import Citation, GeneratedAnswer, Generator
+from core.query_handler import ProcessedQuery, QueryHandler
 from core.reliability import ReliabilityChecker, ReliabilityReport
-from core.query_handler import QueryHandler, ProcessedQuery
+from core.retriever import RetrievedChunk, Retriever
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ ABSTENTION_MESSAGE = (
 @dataclass
 class PipelineResult:
     """Complete result from a single pipeline run."""
+
     # Input
     query: str
     processed_query: ProcessedQuery | None = None
@@ -103,9 +105,13 @@ class PipelineResult:
                 "citation_score": self.reliability.citation_score if self.reliability else None,
                 "grounding_score": self.reliability.grounding_score if self.reliability else None,
                 "confidence": self.reliability.confidence if self.reliability else None,
-                "unsupported_ratio": self.reliability.unsupported_ratio if self.reliability else None,
+                "unsupported_ratio": self.reliability.unsupported_ratio
+                if self.reliability
+                else None,
                 "should_abstain": self.reliability.should_abstain if self.reliability else None,
-                "abstention_reason": self.reliability.abstention_reason if self.reliability else None,
+                "abstention_reason": self.reliability.abstention_reason
+                if self.reliability
+                else None,
                 "verdict": self.reliability.verdict if self.reliability else None,
                 "sources_used": self.reliability.sources_used if self.reliability else [],
                 "details": self.reliability.details if self.reliability else None,
@@ -143,6 +149,7 @@ class Pipeline:
         self.graph_retriever = graph_retriever
         self.router = router
         from core.crag import CRAGEvaluator
+
         self.crag_evaluator = crag_evaluator or CRAGEvaluator()
 
     def run(
@@ -230,6 +237,7 @@ class Pipeline:
                         logger.debug(f"Corrective sub-retrieval failed: {e}")
                 if corrective_chunks:
                     from core.retriever import reciprocal_rank_fusion
+
                     chunks = reciprocal_rank_fusion([chunks, corrective_chunks])
                     result.retrieved_chunks = chunks
         except Exception as e:
@@ -268,8 +276,7 @@ class Pipeline:
             result.should_abstain = reliability.should_abstain
             if reliability.should_abstain:
                 result.abstention_message = (
-                    f"{ABSTENTION_MESSAGE}\n\n"
-                    f"**Reason:** {reliability.abstention_reason}"
+                    f"{ABSTENTION_MESSAGE}\n\n**Reason:** {reliability.abstention_reason}"
                 )
         except Exception as e:
             logger.error(f"Reliability check failed: {e}")
@@ -307,6 +314,7 @@ class Pipeline:
             return self.router.route(query)
         try:
             from graph.router import RouteDecision, RouteMode
+
             return RouteDecision(
                 mode=RouteMode.LOCAL,
                 confidence=1.0,
@@ -314,6 +322,7 @@ class Pipeline:
             )
         except Exception as e:
             from graph.router import RouteDecision, RouteMode
+
             return RouteDecision(
                 mode=RouteMode.LOCAL,
                 confidence=0.0,
@@ -338,13 +347,9 @@ class Pipeline:
                     self._safe_vector_retrieve, query, top_k, enable_reranking
                 )
             if route.run_graph_local and self.graph_retriever is not None:
-                tasks["graph_local"] = pool.submit(
-                    self._safe_graph_local, query
-                )
+                tasks["graph_local"] = pool.submit(self._safe_graph_local, query)
             if route.run_graph_global and self.graph_retriever is not None:
-                tasks["graph_global"] = pool.submit(
-                    self._safe_graph_global, query, one_shot_global
-                )
+                tasks["graph_global"] = pool.submit(self._safe_graph_global, query, one_shot_global)
 
             results: dict[str, list[RetrievedChunk]] = {}
             for name, fut in tasks.items():
@@ -364,7 +369,8 @@ class Pipeline:
 
         # Fuse vector and local graph rankings using Reciprocal Rank Fusion (RRF)
         from core.retriever import reciprocal_rank_fusion
-        detail_lists = [l for l in [vector_chunks, local_chunks] if l]
+
+        detail_lists = [chunk_list for chunk_list in [vector_chunks, local_chunks] if chunk_list]
         fused_details = reciprocal_rank_fusion(detail_lists) if detail_lists else []
 
         merged: list[RetrievedChunk] = []
@@ -384,9 +390,7 @@ class Pipeline:
 
     def _safe_vector_retrieve(self, query, top_k, enable_reranking) -> list[RetrievedChunk]:
         try:
-            return self.retriever.retrieve(
-                query, top_k=top_k, enable_reranking=enable_reranking
-            )
+            return self.retriever.retrieve(query, top_k=top_k, enable_reranking=enable_reranking)
         except Exception as e:
             logger.warning(f"Vector retrieval failed: {e}")
             return []
@@ -401,6 +405,7 @@ class Pipeline:
     def _safe_graph_global(self, query, one_shot: bool = True) -> list[RetrievedChunk]:
         try:
             import inspect
+
             sig = inspect.signature(self.graph_retriever.global_search)
             if "one_shot" in sig.parameters:
                 return self.graph_retriever.global_search(query, one_shot=one_shot)

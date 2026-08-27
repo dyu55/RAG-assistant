@@ -3,14 +3,14 @@ Custom LLM Provider.
 Supports OpenAI-compatible APIs: OpenAI, Anthropic (via OpenAI-compatible gateway),
 Groq, Together AI, Cohere, Fireworks AI, and any other OpenAI-compatible endpoint.
 """
+
 from __future__ import annotations
 
 import json
 import logging
 import os
-from typing import Any
 
-from openai import OpenAI, APIError, RateLimitError, APITimeoutError
+from openai import APIError, APITimeoutError, OpenAI, RateLimitError
 
 from config import settings
 from providers.base import Provider
@@ -238,12 +238,12 @@ class CustomProvider(Provider):
         """Embed using sentence-transformers (local, free)."""
         try:
             from sentence_transformers import SentenceTransformer
-        except ImportError:
+        except ImportError as err:
             raise RuntimeError(
                 "sentence-transformers is not installed. "
-                'Run: pip install sentence-transformers\n'
+                "Run: pip install sentence-transformers\n"
                 "Or set EMBEDDING_BACKEND=openai in your .env."
-            )
+            ) from err
 
         model_name = getattr(settings, "LOCAL_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
         model = SentenceTransformer(model_name)

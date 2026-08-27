@@ -4,6 +4,7 @@ Base provider interface for LLM and embedding backends.
 All concrete LLM providers (OpenAI, Anthropic, Ollama, DeepSeek, etc.)
 implement this interface so the pipeline remains backend-agnostic.
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

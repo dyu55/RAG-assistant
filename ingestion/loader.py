@@ -2,13 +2,14 @@
 Document Loader.
 Loads PDF, Markdown, TXT, and HTML files into a standardized Document format.
 """
+
 from __future__ import annotations
 
 import logging
 import re
-from pathlib import Path
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 
 import fitz  # PyMuPDF
 
@@ -20,6 +21,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Document:
     """A loaded document with its content and metadata."""
+
     content: str
     metadata: dict = field(default_factory=dict)
 
@@ -47,8 +49,7 @@ def load_file(file_path: str | Path, source_name: str | None = None) -> Document
     suffix = path.suffix.lower()
     if suffix not in settings.SUPPORTED_FILE_TYPES:
         raise ValueError(
-            f"Unsupported file type: {suffix}. "
-            f"Supported types: {settings.SUPPORTED_FILE_TYPES}"
+            f"Unsupported file type: {suffix}. Supported types: {settings.SUPPORTED_FILE_TYPES}"
         )
 
     metadata = {
@@ -77,9 +78,7 @@ def load_file(file_path: str | Path, source_name: str | None = None) -> Document
     return Document(content=content, metadata=metadata)
 
 
-def load_from_bytes(
-    file_bytes: bytes, filename: str, file_type: str
-) -> Document:
+def load_from_bytes(file_bytes: bytes, filename: str, file_type: str) -> Document:
     """
     Load a document from raw bytes (for Streamlit file uploads).
 

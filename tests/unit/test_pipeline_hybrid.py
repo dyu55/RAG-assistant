@@ -8,22 +8,18 @@ isolation. Verifies that:
 - PipelineResult.route_mode / sources_used are set
 - the existing reliability engine still runs on the merged chunks
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any
 from unittest.mock import Mock
 
-import pytest
-
-from core.generator import Generator
 from core.pipeline import Pipeline, PipelineResult
 from core.reliability import ReliabilityChecker
 from core.retriever import RetrievedChunk
 from graph.router import RouteDecision, RouteMode
 
-
 # ── Fakes ─────────────────────────────────────────────────────────────────────
+
 
 class FakeEmbedder:
     def get_or_create_collection(self, name=None):
@@ -74,7 +70,8 @@ class FakeGenerator:
         self._response = response
 
     def generate(self, query, chunks, temperature=0.3):
-        from core.generator import GeneratedAnswer, Citation
+        from core.generator import Citation, GeneratedAnswer
+
         citations = []
         for i, c in enumerate(self._response.get("citations", [])):
             source_idx = c.get("source_index", i + 1)
@@ -110,6 +107,7 @@ def _chunk(text, score=0.7, source="vector", chunk_id=None, metadata=None):
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
+
 
 class TestHybridPipeline:
     def test_local_path_only_runs_vector_and_graph_local(self):
@@ -260,10 +258,13 @@ class TestHybridPipeline:
         assert "No router configured" in result.route_reason
 
     def test_pipeline_result_serializes_sources(self):
-        r = PipelineResult(query="x", retrieved_chunks=[
-            _chunk("v", source="vector"),
-            _chunk("g", source="graph"),
-        ])
+        r = PipelineResult(
+            query="x",
+            retrieved_chunks=[
+                _chunk("v", source="vector"),
+                _chunk("g", source="graph"),
+            ],
+        )
         d = r.to_dict()
         assert "sources_used" in d
         assert d["sources_used"] == ["vector", "graph"]

@@ -15,6 +15,7 @@ Entry points:
 When Neo4j is unreachable or `USE_GRAPH_RAG=false`, every method is a
 no-op and returns safely so the vector pipeline keeps working.
 """
+
 from __future__ import annotations
 
 import logging
@@ -26,7 +27,7 @@ from config import settings
 from graph.builder import BuildStats, GraphBuilder
 from graph.communities import CommunityDetector, CommunityLevel
 from graph.neo4j_client import Neo4jClient, Neo4jUnavailable
-from graph.summarizer import CommunitySummarizer, CommunityReport
+from graph.summarizer import CommunityReport, CommunitySummarizer
 from ingestion.chunker import Chunk
 from providers.base import Provider
 
@@ -36,6 +37,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class IndexerReport:
     """Summary of an indexer run."""
+
     chunks_processed: int = 0
     chunks_skipped: int = 0
     new_entities: int = 0
@@ -130,7 +132,9 @@ class GraphIndexer:
             report.chunks_skipped = stats.chunks_skipped
             report.new_entities = stats.new_entities
             report.new_relations = stats.new_relations
-            report.errors.extend([str(e) for e in stats.errors] if isinstance(stats.errors, list) else [])
+            report.errors.extend(
+                [str(e) for e in stats.errors] if isinstance(stats.errors, list) else []
+            )
 
             # Trigger community detection + summarization only when enough new data.
             if report.new_entities >= self.threshold:
@@ -169,6 +173,7 @@ class GraphIndexer:
             self.bootstrap()
 
             from ingestion.embedder import Embedder
+
             embedder = Embedder()
             collection = embedder.get_or_create_collection()
             total = collection.count()
@@ -191,12 +196,14 @@ class GraphIndexer:
                 for cid, text, meta in zip(ids, docs, metas):
                     if not cid or not text:
                         continue
-                    batch.append({
-                        "chunk_id": cid,
-                        "doc_id": (meta or {}).get("doc_id") or "unknown",
-                        "filename": (meta or {}).get("filename") or "unknown",
-                        "text": text,
-                    })
+                    batch.append(
+                        {
+                            "chunk_id": cid,
+                            "doc_id": (meta or {}).get("doc_id") or "unknown",
+                            "filename": (meta or {}).get("filename") or "unknown",
+                            "text": text,
+                        }
+                    )
                 if batch:
                     sub = self.index_chunks(batch)
                     report.chunks_processed += sub.chunks_processed
@@ -232,8 +239,11 @@ class GraphIndexer:
             hierarchy_dict: dict[int, list] = {}
             for r in rows:
                 hierarchy_dict.setdefault(int(r.get("level") or 0), []).append(
-                    {"id": r.get("id"), "level": int(r.get("level") or 0),
-                     "members": list({m for m in (r.get("members") or []) if m})}
+                    {
+                        "id": r.get("id"),
+                        "level": int(r.get("level") or 0),
+                        "members": list({m for m in (r.get("members") or []) if m}),
+                    }
                 )
             hierarchy = [
                 CommunityLevel(level=lv, communities=cs)
@@ -252,6 +262,7 @@ class GraphIndexer:
 
     def _extractor(self):
         from graph.extractor import EntityRelationExtractor
+
         return EntityRelationExtractor(self.provider)
 
     def _normalize_chunk(self, c) -> dict | None:
@@ -278,25 +289,21 @@ class GraphIndexer:
 
     def _no_communities(self) -> bool:
         try:
-            rows = self.neo4j.execute_read(
-                "MATCH (c:Community) RETURN count(c) AS c LIMIT 1"
-            )
+            rows = self.neo4j.execute_read("MATCH (c:Community) RETURN count(c) AS c LIMIT 1")
             return not (rows and rows[0].get("c", 0) > 0)
         except Exception:
             return True
 
     def _run_communities_and_summarize(self, report: IndexerReport) -> None:
         try:
-            hierarchy: list[CommunityLevel] = CommunityDetector(
-                self.neo4j
-            ).detect_and_write()
+            hierarchy: list[CommunityLevel] = CommunityDetector(self.neo4j).detect_and_write()
             total = sum(len(level.communities) for level in hierarchy)
             report.communities = total
 
             if total > 0:
-                summaries = CommunitySummarizer(
-                    self.neo4j, self.provider
-                ).summarize_hierarchy(hierarchy)
+                summaries = CommunitySummarizer(self.neo4j, self.provider).summarize_hierarchy(
+                    hierarchy
+                )
                 report.summarized_communities = len(summaries)
         except Exception as e:
             logger.exception(f"Community pass failed: {e}")

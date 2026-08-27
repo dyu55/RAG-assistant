@@ -1,8 +1,8 @@
 """
 Tests for ingestion/chunker.py
 """
-import pytest
-from ingestion.chunker import RecursiveChunker, Chunk
+
+from ingestion.chunker import Chunk, RecursiveChunker
 
 
 class TestRecursiveChunker:
@@ -67,7 +67,7 @@ class TestRecursiveChunker:
 
     def test_chunk_ids_are_unique(self):
         chunker = RecursiveChunker(chunk_size=50)
-        text = ("Paragraph content here.\n\n" * 10)
+        text = "Paragraph content here.\n\n" * 10
 
         chunks = chunker.chunk_document(text)
 
@@ -85,7 +85,7 @@ class TestRecursiveChunker:
 
     def test_overlap_parameter_respected(self):
         chunker = RecursiveChunker(chunk_size=30, overlap=10)
-        text = ("First chunk content here.\n\nSecond chunk is this.")
+        text = "First chunk content here.\n\nSecond chunk is this."
 
         chunks = chunker.chunk_document(text)
 

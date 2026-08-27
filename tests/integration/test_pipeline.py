@@ -2,18 +2,16 @@
 Integration tests for the RAG pipeline.
 Tests the full orchestration layer with mocked dependencies.
 """
+
 from __future__ import annotations
 
-import pytest
-from unittest.mock import Mock, MagicMock
-from dataclasses import dataclass, field
+from unittest.mock import Mock
 
+from core.generator import Citation, GeneratedAnswer
 from core.pipeline import Pipeline, PipelineResult
-from core.retriever import RetrievedChunk
-from core.generator import GeneratedAnswer, Citation
-from core.reliability import ReliabilityChecker, ReliabilityReport
 from core.query_handler import ProcessedQuery
-
+from core.reliability import ReliabilityReport
+from core.retriever import RetrievedChunk
 
 # ── Mock Factories ───────────────────────────────────────────────────────────────
 
@@ -80,7 +78,9 @@ class TestPipelineRun:
         chunks = [make_chunk("c1", "Python is a programming language.", 0.9)]
         answer = make_answer(
             "Python is a programming language [Source 1].",
-            citations=[Citation(source_index=1, chunk_id="c1", quote="Python is a programming language.")],
+            citations=[
+                Citation(source_index=1, chunk_id="c1", quote="Python is a programming language.")
+            ],
         )
         report = make_report(confidence=0.85)
 
@@ -204,7 +204,7 @@ class TestPipelineRun:
 
         retriever = Mock()
         retriever.retrieve.side_effect = [
-            chunks_original,   # First call with original query
+            chunks_original,  # First call with original query
             chunks_rewritten,  # Second call with rewritten query
         ]
 
@@ -225,10 +225,8 @@ class TestPipelineRun:
             was_rewritten=True,
         )
 
-        pipeline = self._make_pipeline(
-            retriever, generator, reliability, query_handler
-        )
-        result = pipeline.run("what is rag", enable_rewrite=True)
+        pipeline = self._make_pipeline(retriever, generator, reliability, query_handler)
+        _ = pipeline.run("what is rag", enable_rewrite=True)
 
         # Query handler should be called
         query_handler.process.assert_called_once()
@@ -252,7 +250,7 @@ class TestPipelineRun:
         query_handler = Mock()
         pipeline = self._make_pipeline(retriever, generator, reliability, query_handler)
 
-        result = pipeline.run("What is AI?", enable_rewrite=False)
+        _ = pipeline.run("What is AI?", enable_rewrite=False)
 
         # Query handler should NOT be called when rewrite is disabled
         query_handler.process.assert_not_called()
@@ -301,7 +299,8 @@ class TestPipelineRun:
 
         reliability = Mock()
         reliability.check.return_value = make_report(
-            confidence=0.0, should_abstain=True,
+            confidence=0.0,
+            should_abstain=True,
             abstention_reason="No chunks retrieved.",
         )
 

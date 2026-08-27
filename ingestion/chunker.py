@@ -3,10 +3,11 @@ Document Chunker.
 Splits documents into overlapping chunks for embedding and retrieval.
 Uses recursive splitting: paragraphs → sentences → character limit.
 """
+
 from __future__ import annotations
 
-import uuid
 import logging
+import uuid
 from dataclasses import dataclass, field
 
 from config import settings
@@ -17,10 +18,11 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Chunk:
     """A text chunk from a document, ready for embedding."""
+
     text: str
     chunk_id: str
     doc_id: str
-    index: int               # Position within the document
+    index: int  # Position within the document
     metadata: dict = field(default_factory=dict)
 
     def with_graph_context(
@@ -29,7 +31,7 @@ class Chunk:
         relations: list[str] | None = None,
     ) -> str:
         """Return the text prefixed with structured entity and relationship tags for embedding.
-        
+
         This enables dense vector search to match multi-entity and relational queries
         at sub-50ms speed without online graph traversal overhead.
         """

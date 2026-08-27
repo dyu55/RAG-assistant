@@ -14,6 +14,7 @@ The router is a single LLM call that returns a JSON classification. We
 also expose `resolve(mode_setting, llm_decision)` so the UI's explicit
 mode selector can short-circuit the LLM.
 """
+
 from __future__ import annotations
 
 import logging
@@ -162,7 +163,7 @@ class QueryRouter:
     def _fast_path_route(self, query: str) -> RouteDecision | None:
         """High-confidence heuristic matcher (<1ms) to bypass LLM classification."""
         q = query.lower().strip()
-        
+
         # Check BOTH patterns first (e.g. compare X and Y)
         if any(re.search(p, q) for p in self._BOTH_PATTERNS):
             return RouteDecision(
@@ -170,7 +171,7 @@ class QueryRouter:
                 confidence=0.85,
                 reason="Fast-path Heuristic match for comparison query",
             )
-            
+
         # Check GLOBAL patterns (e.g. summarize all docs)
         if any(re.search(p, q) for p in self._GLOBAL_PATTERNS):
             return RouteDecision(
@@ -178,7 +179,7 @@ class QueryRouter:
                 confidence=0.90,
                 reason="Fast-path Heuristic match for global summary query",
             )
-            
+
         # Check explicit LOCAL indicators
         if any(re.search(p, q) for p in self._LOCAL_PATTERNS):
             return RouteDecision(
@@ -204,6 +205,7 @@ class QueryRouter:
     def _parse(self, raw: dict) -> RouteDecision:
         if isinstance(raw, str):
             import json
+
             try:
                 raw = json.loads(raw)
             except Exception:

@@ -1,14 +1,14 @@
 """
 Tests for ingestion/loader.py
 """
+
 import pytest
-from pathlib import Path
 
 from ingestion.loader import (
     Document,
+    _strip_html_tags,
     load_file,
     load_from_bytes,
-    _strip_html_tags,
 )
 
 

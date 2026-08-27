@@ -1,6 +1,7 @@
 """
 Tests for the provider interface used by RAG pipeline components.
 """
+
 from __future__ import annotations
 
 from providers.base import Provider

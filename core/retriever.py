@@ -9,9 +9,9 @@ retrieval path produced it:
 - "graph"     — entity-anchored subgraph traversal (GraphRAG local search)
 - "community" — map-reduce over community summaries (GraphRAG global search)
 """
+
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
 
@@ -38,9 +38,10 @@ Respond with ONLY a JSON object:
 @dataclass
 class RetrievedChunk:
     """A chunk retrieved from a vector store or graph traversal with its relevance score."""
+
     chunk_id: str
     text: str
-    score: float              # Similarity score (higher = more relevant)
+    score: float  # Similarity score (higher = more relevant)
     rerank_score: float = -1  # LLM reranking score (-1 = not reranked)
     metadata: dict = field(default_factory=dict)
 
@@ -251,4 +252,3 @@ class Retriever:
     def has_documents(self) -> bool:
         """Check if the collection has any documents."""
         return self.collection.count() > 0
-

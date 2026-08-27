@@ -2,12 +2,13 @@
 Dashboard Page.
 Evaluation dashboard showing aggregate metrics, query history, and failure analysis.
 """
+
 from __future__ import annotations
 
 import streamlit as st
 
 from evaluation.logger import QueryLogger
-from evaluation.metrics import compute_query_metrics, compute_aggregate_metrics
+from evaluation.metrics import compute_aggregate_metrics
 
 
 def render_dashboard_page() -> None:
@@ -83,8 +84,7 @@ def render_dashboard_page() -> None:
 
     if layer_totals:
         avg_latencies = {
-            layer: round(layer_totals[layer] / layer_counts[layer], 1)
-            for layer in layer_totals
+            layer: round(layer_totals[layer] / layer_counts[layer], 1) for layer in layer_totals
         }
         st.bar_chart(avg_latencies)
 
@@ -105,14 +105,16 @@ def render_dashboard_page() -> None:
             "abstained": "🚫",
         }.get(verdict, "❓")
 
-        table_data.append({
-            "Time": entry.get("timestamp", "")[:19],
-            "Query": entry.get("query", "")[:50],
-            "Verdict": f"{verdict_emoji} {verdict}",
-            "Conf.": f"{rel.get('confidence', 0):.0%}",
-            "Ground.": f"{rel.get('grounding_score', 0):.0%}",
-            "Latency": f"{entry.get('total_latency_ms', 0):.0f}ms",
-        })
+        table_data.append(
+            {
+                "Time": entry.get("timestamp", "")[:19],
+                "Query": entry.get("query", "")[:50],
+                "Verdict": f"{verdict_emoji} {verdict}",
+                "Conf.": f"{rel.get('confidence', 0):.0%}",
+                "Ground.": f"{rel.get('grounding_score', 0):.0%}",
+                "Latency": f"{entry.get('total_latency_ms', 0):.0f}ms",
+            }
+        )
 
     if table_data:
         st.dataframe(table_data, use_container_width=True)
@@ -124,7 +126,8 @@ def render_dashboard_page() -> None:
 
     abstained_entries = [e for e in entries if e.get("should_abstain")]
     low_confidence = [
-        e for e in entries
+        e
+        for e in entries
         if (e.get("reliability", {}) or {}).get("confidence", 1.0) < 0.6
         and not e.get("should_abstain")
     ]
@@ -135,7 +138,9 @@ def render_dashboard_page() -> None:
         if abstained_entries:
             with st.expander("View abstained queries"):
                 for entry in abstained_entries[-5:]:
-                    reason = (entry.get("reliability", {}) or {}).get("abstention_reason", "Unknown")
+                    reason = (entry.get("reliability", {}) or {}).get(
+                        "abstention_reason", "Unknown"
+                    )
                     st.markdown(f"**Q:** {entry.get('query', '')[:80]}")
                     st.caption(f"Reason: {reason}")
                     st.divider()

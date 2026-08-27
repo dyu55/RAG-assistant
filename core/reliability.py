@@ -9,16 +9,17 @@ Checks:
 3. Confidence Scoring: Weighted aggregate of multiple quality signals.
 4. Abstention Decision: Should the system refuse to answer?
 """
+
 from __future__ import annotations
 
-import re
-import logging
 import difflib
+import logging
+import re
 from dataclasses import dataclass, field
 
 from config import settings
+from core.generator import Citation, GeneratedAnswer
 from core.retriever import RetrievedChunk
-from core.generator import GeneratedAnswer, Citation
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +27,11 @@ logger = logging.getLogger(__name__)
 @dataclass
 class GroundingDetail:
     """Detailed result of grounding check for a single citation."""
+
     citation: Citation
-    source_text: str          # The chunk text that was cited
-    match_ratio: float        # How well the quote matches the source (0-1)
-    is_grounded: bool         # Whether the citation is verified
+    source_text: str  # The chunk text that was cited
+    match_ratio: float  # How well the quote matches the source (0-1)
+    is_grounded: bool  # Whether the citation is verified
 
     @property
     def status(self) -> str:
@@ -44,15 +46,17 @@ class GroundingDetail:
 @dataclass
 class UnsupportedClaim:
     """A claim in the answer that is not supported by any retrieved chunk."""
+
     claim: str
-    best_match_score: float   # Highest similarity to any chunk
+    best_match_score: float  # Highest similarity to any chunk
     best_match_chunk_id: str  # Which chunk was closest
-    is_supported: bool        # Whether it meets support threshold
+    is_supported: bool  # Whether it meets support threshold
 
 
 @dataclass
 class ReliabilityReport:
     """Complete reliability assessment of a generated answer."""
+
     # Scores (0.0 to 1.0, higher = better)
     citation_score: float = 0.0
     grounding_score: float = 0.0
@@ -128,9 +132,7 @@ class ReliabilityChecker:
         citation_score = self._check_citation_presence(answer)
 
         # ── Check 2: Grounding Verification ───────────────────────────────
-        grounding_score, grounding_details = self._check_grounding(
-            answer, chunk_map
-        )
+        grounding_score, grounding_details = self._check_grounding(answer, chunk_map)
 
         # ── Check 3: Unsupported Claim Detection ─────────────────────────
         unsupported_claims = self._check_unsupported_claims(answer, chunks)
@@ -208,9 +210,7 @@ class ReliabilityChecker:
             return 0.0
 
         # Check that citations have non-empty quotes
-        valid_citations = [
-            c for c in answer.citations if c.quote and c.chunk_id
-        ]
+        valid_citations = [c for c in answer.citations if c.quote and c.chunk_id]
 
         if not valid_citations:
             return 0.3  # Has citations structure but empty content
@@ -300,9 +300,7 @@ class ReliabilityChecker:
             return 1.0
 
         # Strategy 2: SequenceMatcher on the full texts
-        full_ratio = difflib.SequenceMatcher(
-            None, quote_lower, source_lower
-        ).ratio()
+        full_ratio = difflib.SequenceMatcher(None, quote_lower, source_lower).ratio()
 
         # Strategy 3: Find best matching subsequence
         # Slide a window of quote length over the source and find best match
@@ -313,9 +311,7 @@ class ReliabilityChecker:
             step = max(1, (len(source_lower) - quote_len) // 50)
             for start in range(0, len(source_lower) - quote_len + 1, step):
                 window = source_lower[start : start + quote_len]
-                ratio = difflib.SequenceMatcher(
-                    None, quote_lower, window
-                ).ratio()
+                ratio = difflib.SequenceMatcher(None, quote_lower, window).ratio()
                 best_window_ratio = max(best_window_ratio, ratio)
 
         return max(full_ratio, best_window_ratio)
@@ -341,11 +337,7 @@ class ReliabilityChecker:
 
         Penalty: unsupported claims reduce confidence.
         """
-        avg_retrieval = (
-            sum(retrieval_scores) / len(retrieval_scores)
-            if retrieval_scores
-            else 0.0
-        )
+        avg_retrieval = sum(retrieval_scores) / len(retrieval_scores) if retrieval_scores else 0.0
 
         w = self.confidence_weights
         confidence = (
@@ -356,7 +348,7 @@ class ReliabilityChecker:
         )
 
         # Penalty for unsupported claims (up to 20% reduction)
-        confidence *= (1.0 - 0.2 * unsupported_ratio)
+        confidence *= 1.0 - 0.2 * unsupported_ratio
 
         return max(0.0, min(1.0, confidence))
 
@@ -387,7 +379,7 @@ class ReliabilityChecker:
                 continue
 
             # Skip sentences that are just citation references
-            clean = re.sub(r'\[(?:Source|[VGC]) ?\d+\]', '', sentence).strip()
+            clean = re.sub(r"\[(?:Source|[VGC]) ?\d+\]", "", sentence).strip()
             if len(clean.split()) < 3:
                 continue
 
@@ -400,30 +392,32 @@ class ReliabilityChecker:
                     best_score = score
                     best_chunk_id = chunk.chunk_id
 
-            claims.append(UnsupportedClaim(
-                claim=sentence,
-                best_match_score=round(best_score, 3),
-                best_match_chunk_id=best_chunk_id,
-                is_supported=best_score >= settings.GROUNDING_MATCH_THRESHOLD,
-            ))
+            claims.append(
+                UnsupportedClaim(
+                    claim=sentence,
+                    best_match_score=round(best_score, 3),
+                    best_match_chunk_id=best_chunk_id,
+                    is_supported=best_score >= settings.GROUNDING_MATCH_THRESHOLD,
+                )
+            )
 
         return claims
 
     def _split_into_claims(self, text: str) -> list[str]:
         """Split text into individual sentences/claims."""
         # Remove markdown formatting
-        clean = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)  # bold
-        clean = re.sub(r'\*([^*]+)\*', r'\1', clean)      # italic
-        clean = re.sub(r'\[(?:Source|[VGC]) ?\d+\]', '', clean)  # citations
+        clean = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)  # bold
+        clean = re.sub(r"\*([^*]+)\*", r"\1", clean)  # italic
+        clean = re.sub(r"\[(?:Source|[VGC]) ?\d+\]", "", clean)  # citations
 
         # Split by sentence-ending punctuation
-        sentences = re.split(r'(?<=[.!?])\s+', clean)
+        sentences = re.split(r"(?<=[.!?])\s+", clean)
 
         # Also split by newlines (bullet points, etc.)
         result = []
         for s in sentences:
-            for line in s.split('\n'):
-                line = line.strip().lstrip('- •*')
+            for line in s.split("\n"):
+                line = line.strip().lstrip("- •*")
                 if line:
                     result.append(line)
 
@@ -466,15 +460,13 @@ class ReliabilityChecker:
         # Rule 3: No evidence trail at all
         if citation_score == 0.0 and grounding_score == 0.0:
             reasons.append(
-                "No citations or grounding evidence found — answer may be "
-                "entirely unsupported"
+                "No citations or grounding evidence found — answer may be entirely unsupported"
             )
 
         # Rule 4: Majority of claims unsupported
         if unsupported_ratio > 0.5:
             reasons.append(
-                f"{unsupported_ratio:.0%} of answer claims are not supported "
-                f"by retrieved documents"
+                f"{unsupported_ratio:.0%} of answer claims are not supported by retrieved documents"
             )
 
         if reasons:

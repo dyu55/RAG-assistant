@@ -1,10 +1,12 @@
 """
 Shared fixtures for all tests.
 """
-import pytest
-import tempfile
+
 import json
+import tempfile
 from pathlib import Path
+
+import pytest
 
 
 @pytest.fixture
@@ -37,28 +39,34 @@ def sample_pdf_bytes():
 def sample_jsonl_lines():
     """Sample JSONL log entries for testing logger."""
     return [
-        json.dumps({
-            "timestamp": "2026-01-01T10:00:00",
-            "query": "What is RAG?",
-            "answer": "RAG is retrieval-augmented generation.",
-            "should_abstain": False,
-            "reliability": {"confidence": 0.85, "score": 0.82},
-            "total_latency_ms": 1200,
-        }),
-        json.dumps({
-            "timestamp": "2026-01-01T10:01:00",
-            "query": "Hello",
-            "answer": "Hello! How can I help?",
-            "should_abstain": True,
-            "reliability": {"confidence": 0.1, "score": 0.1},
-            "total_latency_ms": 300,
-        }),
-        json.dumps({
-            "timestamp": "2026-01-01T10:02:00",
-            "query": "Tell me about Python",
-            "answer": "Python is a programming language.",
-            "should_abstain": False,
-            "reliability": {"confidence": 0.90, "score": 0.88},
-            "total_latency_ms": 950,
-        }),
+        json.dumps(
+            {
+                "timestamp": "2026-01-01T10:00:00",
+                "query": "What is RAG?",
+                "answer": "RAG is retrieval-augmented generation.",
+                "should_abstain": False,
+                "reliability": {"confidence": 0.85, "score": 0.82},
+                "total_latency_ms": 1200,
+            }
+        ),
+        json.dumps(
+            {
+                "timestamp": "2026-01-01T10:01:00",
+                "query": "Hello",
+                "answer": "Hello! How can I help?",
+                "should_abstain": True,
+                "reliability": {"confidence": 0.1, "score": 0.1},
+                "total_latency_ms": 300,
+            }
+        ),
+        json.dumps(
+            {
+                "timestamp": "2026-01-01T10:02:00",
+                "query": "Tell me about Python",
+                "answer": "Python is a programming language.",
+                "should_abstain": False,
+                "reliability": {"confidence": 0.90, "score": 0.88},
+                "total_latency_ms": 950,
+            }
+        ),
     ]

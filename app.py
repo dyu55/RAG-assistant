@@ -3,23 +3,25 @@ RAG Assistant — Streamlit App
 A reliable retrieval-augmented knowledge assistant with citation verification,
 grounding checks, confidence scoring, and abstention logic.
 """
+
 from __future__ import annotations
 
-import streamlit as st
 import logging
 import uuid
 
+import streamlit as st
+
 from config import settings
-from providers.custom_provider import CustomProvider
-from ingestion.loader import load_from_bytes
+from core.generator import Generator
+from core.pipeline import Pipeline
+from core.query_handler import QueryHandler
+from core.reliability import ReliabilityChecker
+from core.retriever import Retriever
+from evaluation.logger import QueryLogger
 from ingestion.chunker import RecursiveChunker
 from ingestion.embedder import Embedder
-from core.retriever import Retriever
-from core.generator import Generator
-from core.reliability import ReliabilityChecker
-from core.query_handler import QueryHandler
-from core.pipeline import Pipeline
-from evaluation.logger import QueryLogger
+from ingestion.loader import load_from_bytes
+from providers.custom_provider import CustomProvider
 from ui.chat_page import render_chat_page
 from ui.dashboard_page import render_dashboard_page
 
@@ -28,6 +30,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
 )
+logger = logging.getLogger(__name__)
 
 # ── Page Config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -38,7 +41,8 @@ st.set_page_config(
 )
 
 # ── Custom CSS ────────────────────────────────────────────────────────────────
-st.markdown("""
+st.markdown(
+    """
 <style>
     /* Prevent metric value truncation */
     [data-testid="stMetricValue"] {
@@ -69,10 +73,13 @@ st.markdown("""
         overflow: visible !important;
     }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 
 # ── Initialize Session State ─────────────────────────────────────────────────
+
 
 def init_session_state():
     """Initialize all session state variables."""
@@ -102,6 +109,7 @@ init_session_state()
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
+
 
 def render_sidebar():
     """Render the sidebar with settings and document upload."""
@@ -140,7 +148,7 @@ def render_sidebar():
 
         # ── Model ──────────────────────────────────────────────────────
         from providers.custom_provider import PROVIDER_MODELS
-        all_providers = ["openai", "deepseek", "groq", "together", "anthropic", "custom"]
+
         models_for_provider = PROVIDER_MODELS.get(st.session_state.provider_type, [])
         if models_for_provider:
             model_options = models_for_provider
@@ -188,17 +196,28 @@ def render_sidebar():
         )
 
         st.session_state.temperature = st.slider(
-            "Temperature", 0.0, 1.0, 0.3, 0.1,
+            "Temperature",
+            0.0,
+            1.0,
+            0.3,
+            0.1,
             help="Lower = more deterministic answers.",
         )
 
         st.session_state.top_k = st.slider(
-            "Top-K Chunks", 1, 15, settings.TOP_K,
+            "Top-K Chunks",
+            1,
+            15,
+            settings.TOP_K,
             help="Number of document chunks to retrieve.",
         )
 
         st.session_state.confidence_threshold = st.slider(
-            "Confidence Threshold", 0.0, 1.0, settings.CONFIDENCE_THRESHOLD, 0.05,
+            "Confidence Threshold",
+            0.0,
+            1.0,
+            settings.CONFIDENCE_THRESHOLD,
+            0.05,
             help="Below this threshold, the system will abstain from answering.",
         )
 
@@ -290,8 +309,7 @@ def _render_graph_rag_panel():
             pass
     else:
         st.caption(
-            f"⚠️ Neo4j not reachable at `{settings.NEO4J_URI}`. "
-            "Vector-only mode will be used."
+            f"⚠️ Neo4j not reachable at `{settings.NEO4J_URI}`. Vector-only mode will be used."
         )
 
     cols = st.columns(2)
@@ -364,9 +382,7 @@ def _refresh_summaries():
                 + "\n".join(f"- {e}" for e in report.errors)
             )
         else:
-            st.success(
-                f"✅ Refreshed {report.summarized_communities} community summaries"
-            )
+            st.success(f"✅ Refreshed {report.summarized_communities} community summaries")
     except Exception as e:
         st.error(f"Summary refresh failed: {e}")
 
@@ -531,8 +547,9 @@ def _get_embedder_stats():
     for production use after pipeline is initialized.
     """
     try:
-        import chromadb
         from pathlib import Path
+
+        import chromadb
 
         db_path = Path(settings.CHROMA_DB_PATH)
         if not db_path.exists():
@@ -573,8 +590,9 @@ def _refresh_collection_stats():
     Avoids re-scanning the full collection on every sidebar render.
     """
     try:
-        import chromadb
         from pathlib import Path
+
+        import chromadb
 
         db_path = Path(settings.CHROMA_DB_PATH)
         if not db_path.exists():
@@ -701,6 +719,7 @@ def _get_pipeline():
 
 
 # ── Main App ──────────────────────────────────────────────────────────────────
+
 
 def main():
     render_sidebar()

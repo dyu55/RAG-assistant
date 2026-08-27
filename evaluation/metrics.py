@@ -9,9 +9,9 @@ Metrics:
 - Grounding Rate: % of citations verified against sources
 - Abstention Rate: how often the system refuses to answer
 """
+
 from __future__ import annotations
 
-import re
 import logging
 from dataclasses import dataclass
 
@@ -21,12 +21,13 @@ logger = logging.getLogger(__name__)
 @dataclass
 class QueryMetrics:
     """Metrics computed from a single pipeline result."""
-    faithfulness: float       # 1 - unsupported_ratio
+
+    faithfulness: float  # 1 - unsupported_ratio
     citation_coverage: float  # citation_score from reliability
-    grounding_rate: float     # grounding_score from reliability
-    confidence: float         # overall confidence
-    abstained: bool           # whether system abstained
-    latency_ms: float         # total pipeline latency
+    grounding_rate: float  # grounding_score from reliability
+    confidence: float  # overall confidence
+    abstained: bool  # whether system abstained
+    latency_ms: float  # total pipeline latency
 
     def to_dict(self) -> dict:
         return {
@@ -42,6 +43,7 @@ class QueryMetrics:
 @dataclass
 class AggregateMetrics:
     """Aggregated metrics over multiple queries."""
+
     total_queries: int
     avg_faithfulness: float
     avg_citation_coverage: float

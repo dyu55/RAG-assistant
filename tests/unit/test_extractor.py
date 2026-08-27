@@ -4,23 +4,22 @@ Unit tests for graph/extractor.py
 Tests schema parsing, normalization, markdown-fence stripping, and
 graceful failure handling. Uses a Mock provider so no API is called.
 """
+
 from __future__ import annotations
 
 import json
-import pytest
 from unittest.mock import Mock
 
 from graph.extractor import (
+    Entity,
     EntityRelationExtractor,
     ExtractionResult,
-    Entity,
-    Relation,
     _normalize,
     _strip_markdown_fences,
 )
 
-
 # ── _normalize ────────────────────────────────────────────────────────────────
+
 
 class TestNormalize:
     def test_lowercases(self):
@@ -47,13 +46,14 @@ class TestNormalize:
 
 # ── _strip_markdown_fences ────────────────────────────────────────────────────
 
+
 class TestStripFences:
     def test_json_fence(self):
-        raw = "```json\n{\"a\": 1}\n```"
+        raw = '```json\n{"a": 1}\n```'
         assert _strip_markdown_fences(raw) == '{"a": 1}'
 
     def test_plain_fence(self):
-        raw = "```\n{\"a\": 1}\n```"
+        raw = '```\n{"a": 1}\n```'
         assert _strip_markdown_fences(raw) == '{"a": 1}'
 
     def test_no_fence(self):
@@ -65,6 +65,7 @@ class TestStripFences:
 
 # ── EntityRelationExtractor ──────────────────────────────────────────────────
 
+
 def _mock_provider_returning(payload: dict):
     provider = Mock()
     provider.generate_json.return_value = payload
@@ -74,22 +75,24 @@ def _mock_provider_returning(payload: dict):
 def _golden_payload():
     return {
         "entities": [
-            {"name": "GraphRAG", "type": "TECHNOLOGY",
-             "description": "Microsoft's graph-based RAG."},
-            {"name": "Microsoft", "type": "ORG",
-             "description": "Technology company."},
+            {
+                "name": "GraphRAG",
+                "type": "TECHNOLOGY",
+                "description": "Microsoft's graph-based RAG.",
+            },
+            {"name": "Microsoft", "type": "ORG", "description": "Technology company."},
             {"name": "", "type": "CONCEPT", "description": "should be skipped"},
         ],
         "relations": [
-            {"source": "GraphRAG", "target": "Microsoft",
-             "predicate": "introduced_by",
-             "description": "GraphRAG was introduced by Microsoft."},
-            {"source": "", "target": "X", "predicate": "USES",
-             "description": "missing source"},
-            {"source": "X", "target": "", "predicate": "USES",
-             "description": "missing target"},
-            {"source": "X", "target": "Y", "predicate": "",
-             "description": "missing predicate"},
+            {
+                "source": "GraphRAG",
+                "target": "Microsoft",
+                "predicate": "introduced_by",
+                "description": "GraphRAG was introduced by Microsoft.",
+            },
+            {"source": "", "target": "X", "predicate": "USES", "description": "missing source"},
+            {"source": "X", "target": "", "predicate": "USES", "description": "missing target"},
+            {"source": "X", "target": "Y", "predicate": "", "description": "missing predicate"},
         ],
     }
 
@@ -159,7 +162,7 @@ class TestExtractorParse:
                 {"name": "OK", "type": "X"},
             ],
             "relations": [
-                {"predicate": "USES"},          # no source/target
+                {"predicate": "USES"},  # no source/target
                 {"source": "OK", "target": "OK2", "predicate": "USES"},
                 {"source": "", "target": "OK2", "predicate": "USES"},  # empty src
             ],

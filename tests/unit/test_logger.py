@@ -1,17 +1,16 @@
 """
 Tests for evaluation/logger.py
 """
-import json
-import pytest
-from pathlib import Path
 
-from evaluation.logger import QueryLogger, _MAX_TAIL_BYTES, _ESTIMATED_LINE_BYTES
+import json
+
+from evaluation.logger import QueryLogger
 
 
 class TestQueryLoggerInit:
     def test_creates_log_directory(self, temp_dir):
         log_dir = temp_dir / "logs"
-        logger = QueryLogger(log_dir=str(log_dir))
+        _ = QueryLogger(log_dir=str(log_dir))
 
         assert log_dir.exists()
         assert log_dir.is_dir()

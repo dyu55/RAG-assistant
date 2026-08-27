@@ -3,6 +3,7 @@ Embedder.
 Generates embeddings and stores them in ChromaDB.
 Supports OpenAI API embeddings or local sentence-transformers.
 """
+
 from __future__ import annotations
 
 import logging
@@ -41,6 +42,7 @@ class Embedder:
         if self.backend == "openai":
             if openai_provider is None:
                 from providers.openai_provider import OpenAIProvider
+
                 self._openai = OpenAIProvider()
             else:
                 self._openai = openai_provider
@@ -58,6 +60,7 @@ class Embedder:
     def _load_local_model(self):
         """Load the local sentence-transformers model."""
         from sentence_transformers import SentenceTransformer
+
         model = SentenceTransformer(settings.LOCAL_EMBEDDING_MODEL)
         logger.info(f"Loaded local embedding model: {settings.LOCAL_EMBEDDING_MODEL}")
         return model

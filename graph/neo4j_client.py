@@ -10,6 +10,7 @@ The driver is created lazily so that simply importing this module never
 opens a socket. Use `Neo4jClient()` and call `connect()` (or rely on the
 auto-connect on first `execute(...)`) only when you actually need the graph.
 """
+
 from __future__ import annotations
 
 import logging
@@ -36,17 +37,13 @@ class Neo4jClient:
     # it is safe to call on every startup of the app.
     BOOTSTRAP_CYPHER = [
         # Entity uniqueness
-        "CREATE CONSTRAINT entity_name IF NOT EXISTS "
-        "FOR (n:Entity) REQUIRE n.name IS UNIQUE",
+        "CREATE CONSTRAINT entity_name IF NOT EXISTS FOR (n:Entity) REQUIRE n.name IS UNIQUE",
         # Community uniqueness
-        "CREATE CONSTRAINT community_id IF NOT EXISTS "
-        "FOR (c:Community) REQUIRE c.id IS UNIQUE",
+        "CREATE CONSTRAINT community_id IF NOT EXISTS FOR (c:Community) REQUIRE c.id IS UNIQUE",
         # Helpful lookup index for community level
-        "CREATE INDEX community_level IF NOT EXISTS "
-        "FOR (c:Community) ON (c.level)",
+        "CREATE INDEX community_level IF NOT EXISTS FOR (c:Community) ON (c.level)",
         # Helpful index for traversal from a chunk to its entities
-        "CREATE INDEX chunk_doc IF NOT EXISTS "
-        "FOR (k:Chunk) ON (k.doc_id)",
+        "CREATE INDEX chunk_doc IF NOT EXISTS FOR (k:Chunk) ON (k.doc_id)",
     ]
 
     def __init__(
@@ -71,8 +68,7 @@ class Neo4jClient:
             from neo4j import GraphDatabase  # type: ignore
         except ImportError as e:  # pragma: no cover - exercised in misconfigured envs
             raise Neo4jUnavailable(
-                "The `neo4j` Python driver is not installed. "
-                "Install it with: pip install neo4j"
+                "The `neo4j` Python driver is not installed. Install it with: pip install neo4j"
             ) from e
         return GraphDatabase
 
@@ -138,7 +134,9 @@ class Neo4jClient:
             self.connect()
             with self._session() as session:
                 entities = session.run("MATCH (n:Entity) RETURN count(n) AS c").single()["c"]
-                relations = session.run("MATCH ()-[r:RELATED]->() RETURN count(r) AS c").single()["c"]
+                relations = session.run("MATCH ()-[r:RELATED]->() RETURN count(r) AS c").single()[
+                    "c"
+                ]
                 communities = session.run("MATCH (c:Community) RETURN count(c) AS c").single()["c"]
                 chunks = session.run("MATCH (k:Chunk) RETURN count(k) AS c").single()["c"]
             return {
@@ -187,9 +185,7 @@ class Neo4jClient:
         self.connect()
         with self._session() as session:
             return list(
-                session.execute_read(
-                    lambda tx: [dict(r) for r in tx.run(cypher, parameters or {})]
-                )
+                session.execute_read(lambda tx: [dict(r) for r in tx.run(cypher, parameters or {})])
             )
 
     # ── Maintenance helpers used by GraphIndexer ──────────────────────────────

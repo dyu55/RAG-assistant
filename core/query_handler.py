@@ -7,10 +7,11 @@ Features:
 - Query Rewrite: LLM-based reformulation of vague/ambiguous queries
 - Multi-question Detection: splits compound questions into sub-queries
 """
+
 from __future__ import annotations
 
-import re
 import logging
+import re
 from dataclasses import dataclass, field
 
 from providers.openai_provider import OpenAIProvider
@@ -51,6 +52,7 @@ Respond with a JSON object:
 @dataclass
 class ProcessedQuery:
     """Result of query processing."""
+
     original: str
     normalized: str
     rewritten: str
@@ -66,8 +68,8 @@ class ProcessedQuery:
 class QueryHandler:
     """
     Preprocesses user queries to improve retrieval quality.
-    
-    Interview talking point: "Raw user queries degraded retrieval recall by ~15-20%, 
+
+    Interview talking point: "Raw user queries degraded retrieval recall by ~15-20%,
     so I added a lightweight normalization + rewrite layer before retrieval."
     """
 
@@ -115,20 +117,21 @@ class QueryHandler:
     def _normalize(self, query: str) -> str:
         """
         Basic query normalization.
-        
+
         - Strip extra whitespace
         - Remove excessive punctuation
         - Ensure it ends with a question mark if it looks like a question
         """
         # Strip and collapse whitespace
-        normalized = re.sub(r'\s+', ' ', query.strip())
+        normalized = re.sub(r"\s+", " ", query.strip())
 
         # Remove excessive punctuation (e.g., "????" → "?")
-        normalized = re.sub(r'([?!.])\1+', r'\1', normalized)
+        normalized = re.sub(r"([?!.])\1+", r"\1", normalized)
 
         # Remove leading/trailing quotes if wrapping the whole query
-        if (normalized.startswith('"') and normalized.endswith('"')) or \
-           (normalized.startswith("'") and normalized.endswith("'")):
+        if (normalized.startswith('"') and normalized.endswith('"')) or (
+            normalized.startswith("'") and normalized.endswith("'")
+        ):
             normalized = normalized[1:-1].strip()
 
         return normalized
@@ -146,9 +149,17 @@ class QueryHandler:
 
         # Queries starting with vague phrases
         vague_starts = [
-            "what is", "what are", "tell me", "explain",
-            "how to", "how do", "what about", "describe",
-            "help me", "show me", "what does",
+            "what is",
+            "what are",
+            "tell me",
+            "explain",
+            "how to",
+            "how do",
+            "what about",
+            "describe",
+            "help me",
+            "show me",
+            "what does",
         ]
         query_lower = query.lower()
         if any(query_lower.startswith(v) for v in vague_starts):
