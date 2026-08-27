@@ -65,6 +65,7 @@ class PipelineResult:
     latency_ms: dict = field(default_factory=dict)
     total_latency_ms: float = 0.0
     model: str = ""
+    metadata: dict = field(default_factory=dict)
 
     @property
     def display_answer(self) -> str:
@@ -118,7 +119,7 @@ class PipelineResult:
 class Pipeline:
     """
     Main RAG pipeline orchestrator.
-    query → query_rewrite → routing → (vector ‖ graph) → reranking → generation → reliability → result
+    query → query_rewrite → routing → (vector ‖ graph) → RRF → CRAG Evaluator → generation → reliability → result
     """
 
     def __init__(
@@ -132,6 +133,7 @@ class Pipeline:
         # the pipeline behaves exactly as it did before this change.
         graph_retriever=None,
         router=None,
+        crag_evaluator=None,
     ):
         self.retriever = retriever
         self.generator = generator
@@ -140,6 +142,8 @@ class Pipeline:
         self.query_logger = query_logger
         self.graph_retriever = graph_retriever
         self.router = router
+        from core.crag import CRAGEvaluator
+        self.crag_evaluator = crag_evaluator or CRAGEvaluator()
 
     def run(
         self,
@@ -190,7 +194,7 @@ class Pipeline:
         result.route_reason = route.reason
         result.latency_ms["route"] = round((time.time() - t0) * 1000, 1)
 
-        # ── Layer 1: Retrieval (hybrid) ───────────────────────────────────
+        # ── Layer 1: Retrieval (hybrid + RRF) ─────────────────────────────
         t0 = time.time()
         chunks: list[RetrievedChunk] = []
         try:
@@ -207,6 +211,30 @@ class Pipeline:
             logger.error(f"Retrieval failed: {e}")
             chunks = []
         result.latency_ms["retrieval"] = round((time.time() - t0) * 1000, 1)
+
+        # ── Layer 1.5: Corrective RAG (CRAG) Evaluation & Correction ─────
+        t0 = time.time()
+        try:
+            crag_eval = self.crag_evaluator.evaluate(retrieval_query, chunks)
+            result.metadata["crag_action"] = crag_eval.action.value
+            result.metadata["crag_confidence"] = crag_eval.confidence
+
+            if crag_eval.is_ambiguous and crag_eval.suggested_queries:
+                logger.info(f"CRAG triggered corrective search on: {crag_eval.suggested_queries}")
+                corrective_chunks = []
+                for sub_q in crag_eval.suggested_queries:
+                    try:
+                        c_res = self._safe_vector_retrieve(sub_q, top_k=2, enable_reranking=False)
+                        corrective_chunks.extend(c_res)
+                    except Exception as e:
+                        logger.debug(f"Corrective sub-retrieval failed: {e}")
+                if corrective_chunks:
+                    from core.retriever import reciprocal_rank_fusion
+                    chunks = reciprocal_rank_fusion([chunks, corrective_chunks])
+                    result.retrieved_chunks = chunks
+        except Exception as e:
+            logger.warning(f"CRAG evaluation failed: {e}")
+        result.latency_ms["crag_eval"] = round((time.time() - t0) * 1000, 1)
 
         # ── Layer 2: Generation ───────────────────────────────────────────
         t0 = time.time()
