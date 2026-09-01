@@ -159,3 +159,39 @@ class TestChunkEdgeCases:
         assert len(chunks) >= 1
         for c in chunks:
             assert isinstance(c, Chunk)
+
+
+class TestContextualChunking:
+    def test_with_document_context_headers(self):
+        chunk = Chunk(text="Revenue increased by 15%.", chunk_id="c1", doc_id="d1", index=0)
+        enriched = chunk.with_document_context(
+            doc_title="Q3 2026 Financial Report",
+            summary="Financial performance overview of Acme Corp",
+            breadcrumb="Income Statement > Regional Sales",
+        )
+        assert "[Document: Q3 2026 Financial Report]" in enriched
+        assert "[Section: Income Statement > Regional Sales]" in enriched
+        assert "[Context: Financial performance overview of Acme Corp]" in enriched
+        assert "Revenue increased by 15%." in enriched
+
+    def test_with_document_context_no_headers_returns_plain_text(self):
+        chunk = Chunk(text="Plain text.", chunk_id="c1", doc_id="d1", index=0)
+        enriched = chunk.with_document_context()
+        assert enriched == "Plain text."
+
+    def test_chunk_document_contextual_enriches_chunks(self):
+        chunker = RecursiveChunker(chunk_size=512)
+        text = "Deep learning models require high throughput training."
+        chunks = chunker.chunk_document_contextual(
+            text,
+            doc_id="ai-doc-1",
+            doc_title="AI Infrastructure",
+            doc_summary="Guide on training scalable LLMs",
+        )
+
+        assert len(chunks) == 1
+        c = chunks[0]
+        assert "[Document: AI Infrastructure]" in c.text
+        assert "[Context: Guide on training scalable LLMs]" in c.text
+        assert c.metadata["doc_title"] == "AI Infrastructure"
+        assert c.metadata["doc_summary"] == "Guide on training scalable LLMs"

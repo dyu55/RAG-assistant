@@ -44,6 +44,29 @@ class Chunk:
             return f"{' '.join(parts)}\n\n{self.text}"
         return self.text
 
+    def with_document_context(
+        self,
+        doc_title: str | None = None,
+        summary: str | None = None,
+        breadcrumb: str | None = None,
+    ) -> str:
+        """Return text prefixed with document-level and section breadcrumb context.
+
+        Implements Anthropic Contextual Retrieval pattern: prepending document headers
+        and section summaries preserves macro-context across granular chunks.
+        """
+        headers = []
+        if doc_title:
+            headers.append(f"[Document: {doc_title.strip()}]")
+        if breadcrumb:
+            headers.append(f"[Section: {breadcrumb.strip()}]")
+        if summary:
+            headers.append(f"[Context: {summary.strip()}]")
+
+        if headers:
+            return f"{' '.join(headers)}\n\n{self.text}"
+        return self.text
+
     def __repr__(self) -> str:
         preview = self.text[:80].replace("\n", " ")
         return f"Chunk(id={self.chunk_id[:8]}..., index={self.index}, len={len(self.text)}, '{preview}...')"
@@ -122,6 +145,35 @@ class RecursiveChunker:
             f"(avg {sum(len(c.text) for c in chunks) // max(len(chunks), 1)} chars)"
         )
         return chunks
+
+    def chunk_document_contextual(
+        self,
+        text: str,
+        doc_id: str | None = None,
+        doc_title: str | None = None,
+        doc_summary: str | None = None,
+        metadata: dict | None = None,
+    ) -> list[Chunk]:
+        """Split document text and enrich chunk text with contextual document metadata.
+
+        Preserves macro-context across granular chunks, resolving pronoun ambiguities and
+        thematic drift during dense embedding search.
+        """
+        base_chunks = self.chunk_document(text, doc_id=doc_id, metadata=metadata)
+        if not doc_title and not doc_summary:
+            return base_chunks
+
+        for chunk in base_chunks:
+            chunk.text = chunk.with_document_context(
+                doc_title=doc_title,
+                summary=doc_summary,
+            )
+            if doc_title:
+                chunk.metadata["doc_title"] = doc_title
+            if doc_summary:
+                chunk.metadata["doc_summary"] = doc_summary
+
+        return base_chunks
 
     def _recursive_split(self, text: str, sep_index: int) -> list[str]:
         """Recursively split text using progressively finer separators."""
