@@ -208,9 +208,15 @@ class Retriever:
             f"(best score: {chunks[0].score if chunks else 'N/A'})"
         )
 
-        # Optional: LLM-based reranking
-        if enable_reranking and self.rerank_provider and chunks:
-            chunks = self._rerank(query, chunks)
+        # Optional: Two-stage reranking (LLM provider or FastCrossEncoder)
+        if enable_reranking and chunks:
+            if self.rerank_provider:
+                chunks = self._rerank(query, chunks)
+            else:
+                from core.reranker import FastCrossEncoderReranker
+
+                reranker = FastCrossEncoderReranker()
+                chunks = reranker.rerank(query, chunks)
             # After reranking, take only top_k
             chunks = chunks[:top_k]
             logger.info(
