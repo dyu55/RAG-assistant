@@ -110,16 +110,12 @@ _PUNCT_STRIP_RE = re.compile(r"^[\s\W_]+|[\s\W_]+$", re.UNICODE)
 def _normalize(name: str) -> str:
     """Canonical form used as the entity key.
 
-    Lowercased, whitespace collapsed, leading/trailing punctuation stripped,
-    and `None`/`""` becomes the empty string. This is intentionally
-    lossy: "GraphRAG" and "graph rag" collapse to the same key.
+    Uses EntityResolver to strip determiners, apply domain acronym resolution,
+    normalize plurals, and collapse whitespace so synonymous entities unify to a single node.
     """
-    if not name:
-        return ""
-    s = name.strip().lower()
-    s = _WHITESPACE_RE.sub(" ", s)
-    s = _PUNCT_STRIP_RE.sub("", s)
-    return s
+    from graph.entity_resolver import canonicalize_entity_name
+
+    return canonicalize_entity_name(name)
 
 
 def _strip_markdown_fences(raw: str) -> str:
