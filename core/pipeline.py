@@ -140,6 +140,7 @@ class Pipeline:
         graph_retriever=None,
         router=None,
         crag_evaluator=None,
+        semantic_cache=None,
     ):
         self.retriever = retriever
         self.generator = generator
@@ -148,6 +149,7 @@ class Pipeline:
         self.query_logger = query_logger
         self.graph_retriever = graph_retriever
         self.router = router
+        self.semantic_cache = semantic_cache
         from core.crag import CRAGEvaluator
 
         self.crag_evaluator = crag_evaluator or CRAGEvaluator()
@@ -160,6 +162,7 @@ class Pipeline:
         enable_rewrite: bool = True,
         enable_reranking: bool = False,
         one_shot_global: bool = True,
+        enable_cache: bool = True,
     ) -> PipelineResult:
         """
         Execute the full RAG pipeline.
@@ -171,6 +174,7 @@ class Pipeline:
             enable_rewrite: Whether to rewrite vague queries.
             enable_reranking: Whether to LLM-rerank retrieved chunks.
             one_shot_global: Whether to use fast one-shot synthesis for global community search.
+            enable_cache: Whether to check and populate the semantic response cache.
 
         Returns:
             PipelineResult with answer, citations, reliability, and latency.
@@ -180,6 +184,18 @@ class Pipeline:
             model=self.generator.provider.get_model_name(),
         )
         pipeline_start = time.time()
+
+        # ── Layer -0.5: Semantic Cache Check ──────────────────────────────
+        if enable_cache and self.semantic_cache:
+            cached_data, sim, hit_type = self.semantic_cache.get(query)
+            if cached_data and hit_type != "miss":
+                result.answer = cached_data.get("answer", "")
+                result.citations = cached_data.get("citations", [])
+                result.should_abstain = cached_data.get("should_abstain", False)
+                result.metadata["cache_hit"] = hit_type
+                result.metadata["cache_similarity"] = sim
+                result.total_latency_ms = round((time.time() - pipeline_start) * 1000, 1)
+                return result
 
         # ── Layer 0: Query Processing ─────────────────────────────────────
         retrieval_query = query
@@ -298,11 +314,21 @@ class Pipeline:
             except Exception as e:
                 logger.error(f"Logging failed: {e}")
 
-        logger.info(
-            f"Pipeline complete: {result.reliability.verdict_emoji if result.reliability else '?'} "
-            f"confidence={result.reliability.confidence if result.reliability else 'N/A'} "
-            f"route={result.route_mode} latency={result.total_latency_ms}ms (route={result.latency_ms.get('route', 0)}ms, retrieval={result.latency_ms.get('retrieval', 0)}ms)"
-        )
+        # ── Populate Cache ────────────────────────────────────────────────
+        if enable_cache and self.semantic_cache and not result.should_abstain and result.answer:
+            try:
+                self.semantic_cache.put(
+                    query=query,
+                    query_embedding=[],
+                    payload={
+                        "answer": result.answer,
+                        "citations": result.citations,
+                        "should_abstain": result.should_abstain,
+                        "total_latency_ms": result.total_latency_ms,
+                    },
+                )
+            except Exception as e:
+                logger.debug(f"Cache population failed: {e}")
 
         return result
 
