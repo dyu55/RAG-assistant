@@ -57,6 +57,7 @@ class ProcessedQuery:
     normalized: str
     rewritten: str
     sub_questions: list[str] = field(default_factory=list)
+    hypothetical_document: str | None = None
     was_rewritten: bool = False
 
     @property
@@ -76,16 +77,22 @@ class QueryHandler:
     def __init__(self, provider: OpenAIProvider | None = None):
         self.provider = provider
 
-    def process(self, query: str, enable_rewrite: bool = True) -> ProcessedQuery:
+    def process(
+        self,
+        query: str,
+        enable_rewrite: bool = True,
+        enable_hyde: bool = False,
+    ) -> ProcessedQuery:
         """
         Full query processing pipeline.
 
         Args:
             query: Raw user query.
             enable_rewrite: Whether to use LLM-based query rewriting.
+            enable_hyde: Whether to generate a HyDE hypothetical answer passage.
 
         Returns:
-            ProcessedQuery with normalized and optionally rewritten query.
+            ProcessedQuery with normalized, optionally rewritten query, and HyDE passage.
         """
         # Step 1: Normalize
         normalized = self._normalize(query)
@@ -104,11 +111,18 @@ class QueryHandler:
                 logger.warning(f"Query rewrite failed, using original: {e}")
                 rewritten = normalized
 
+        # Step 3: Optional HyDE hypothetical document generation
+        hypothetical_doc = None
+        if enable_hyde:
+            from core.hyde import generate_hyde_passage
+
+            hypothetical_doc = generate_hyde_passage(rewritten, provider=self.provider)
+
         result = ProcessedQuery(
             original=query,
             normalized=normalized,
             rewritten=rewritten,
-            sub_questions=[rewritten],
+            hypothetical_document=hypothetical_doc,
             was_rewritten=was_rewritten,
         )
 
