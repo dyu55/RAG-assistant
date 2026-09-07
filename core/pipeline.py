@@ -1,132 +1,28 @@
-"""
-Pipeline Orchestrator.
-Wires all layers together: retrieval → generation → reliability → logging.
-Single entry point: pipeline.run(query) → PipelineResult.
-
-Hybrid (GraphRAG) mode
-----------------------
-When a `GraphRetriever` is provided, the pipeline runs vector and graph
-retrieval in parallel (they are both I/O bound). The graph retrieval may
-be skipped when the `QueryRouter` decides the question is purely local.
-
-The merged chunks preserve their `source` field so the generator and the
-reliability layer can distinguish vector hits (`[V N]`) from graph hits
-(`[G N]`) and community reports (`[C N]`).
-"""
+"""RAG orchestration: process, retrieve, correct, generate, verify, record."""
 
 from __future__ import annotations
 
 import logging
-import time
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from contextlib import contextmanager
+from copy import deepcopy
+from time import perf_counter
+from uuid import uuid4
 
-from core.generator import Citation, GeneratedAnswer, Generator
-from core.query_handler import ProcessedQuery, QueryHandler
+from core.crag import CRAGEvaluator
+from core.generator import Generator
+from core.models import GeneratedAnswer
+from core.query_handler import QueryHandler
 from core.reliability import ReliabilityChecker, ReliabilityReport
-from core.retriever import RetrievedChunk, Retriever
+from core.result import ABSTENTION_MESSAGE as ABSTENTION_MESSAGE
+from core.result import PipelineResult as PipelineResult
+from core.retrieval import HybridRetrieval
+from core.retriever import Retriever, reciprocal_rank_fusion
 
 logger = logging.getLogger(__name__)
 
 
-ABSTENTION_MESSAGE = (
-    "⚠️ I don't have enough evidence to answer this question reliably. "
-    "The retrieved documents don't provide sufficient support for a confident answer.\n\n"
-    "**Suggestions:**\n"
-    "- Try rephrasing your question to be more specific\n"
-    "- Upload additional relevant documents\n"
-    "- Check if your question is within the scope of the uploaded documents"
-)
-
-
-@dataclass
-class PipelineResult:
-    """Complete result from a single pipeline run."""
-
-    # Input
-    query: str
-    processed_query: ProcessedQuery | None = None
-
-    # Retrieval
-    retrieved_chunks: list[RetrievedChunk] = field(default_factory=list)
-
-    # Generation
-    answer: str = ""
-    citations: list[Citation] = field(default_factory=list)
-    generated: GeneratedAnswer | None = None
-
-    # Reliability
-    reliability: ReliabilityReport | None = None
-    should_abstain: bool = False
-    abstention_message: str | None = None
-
-    # Routing & observability
-    route_mode: str = "vector-only"
-    route_confidence: float = 0.0
-    route_reason: str = ""
-    latency_ms: dict = field(default_factory=dict)
-    total_latency_ms: float = 0.0
-    model: str = ""
-    metadata: dict = field(default_factory=dict)
-
-    @property
-    def display_answer(self) -> str:
-        """The answer to show the user (abstention message if abstaining)."""
-        if self.should_abstain:
-            return self.abstention_message or ABSTENTION_MESSAGE
-        return self.answer
-
-    def to_dict(self) -> dict:
-        """Serialize to dict for logging."""
-        return {
-            "query": self.query,
-            "rewritten_query": self.processed_query.rewritten if self.processed_query else None,
-            "was_rewritten": self.processed_query.was_rewritten if self.processed_query else False,
-            "answer": self.answer,
-            "display_answer": self.display_answer,
-            "should_abstain": self.should_abstain,
-            "abstention_message": self.abstention_message,
-            "route_mode": self.route_mode,
-            "route_confidence": self.route_confidence,
-            "route_reason": self.route_reason,
-            "num_chunks_retrieved": len(self.retrieved_chunks),
-            "retrieval_scores": [c.score for c in self.retrieved_chunks],
-            "sources_used": [c.retrieval_source for c in self.retrieved_chunks],
-            "citations": [
-                {
-                    "source_index": c.source_index,
-                    "chunk_id": c.chunk_id,
-                    "quote": c.quote,
-                    "source_type": c.source_type,
-                }
-                for c in self.citations
-            ],
-            "reliability": {
-                "citation_score": self.reliability.citation_score if self.reliability else None,
-                "grounding_score": self.reliability.grounding_score if self.reliability else None,
-                "confidence": self.reliability.confidence if self.reliability else None,
-                "unsupported_ratio": self.reliability.unsupported_ratio
-                if self.reliability
-                else None,
-                "should_abstain": self.reliability.should_abstain if self.reliability else None,
-                "abstention_reason": self.reliability.abstention_reason
-                if self.reliability
-                else None,
-                "verdict": self.reliability.verdict if self.reliability else None,
-                "sources_used": self.reliability.sources_used if self.reliability else [],
-                "details": self.reliability.details if self.reliability else None,
-            },
-            "latency_ms": self.latency_ms,
-            "total_latency_ms": self.total_latency_ms,
-            "model": self.model,
-        }
-
-
 class Pipeline:
-    """
-    Main RAG pipeline orchestrator.
-    query → query_rewrite → routing → (vector ‖ graph) → RRF → CRAG Evaluator → generation → reliability → result
-    """
+    """Coordinate replaceable stages, keeping request state local to each run."""
 
     def __init__(
         self,
@@ -135,8 +31,6 @@ class Pipeline:
         reliability_checker: ReliabilityChecker | None = None,
         query_handler: QueryHandler | None = None,
         query_logger=None,
-        # Optional GraphRAG components. When `graph_retriever` is None
-        # the pipeline behaves exactly as it did before this change.
         graph_retriever=None,
         router=None,
         crag_evaluator=None,
@@ -150,9 +44,21 @@ class Pipeline:
         self.graph_retriever = graph_retriever
         self.router = router
         self.semantic_cache = semantic_cache
-        from core.crag import CRAGEvaluator
-
         self.crag_evaluator = crag_evaluator or CRAGEvaluator()
+        self._cache_namespace = uuid4().hex
+
+    def invalidate_cache(self) -> None:
+        """Invalidate this pipeline's answers after documents or configuration change."""
+        self._cache_namespace = uuid4().hex
+
+    @staticmethod
+    @contextmanager
+    def _timed(result: PipelineResult, stage: str):
+        start = perf_counter()
+        try:
+            yield
+        finally:
+            result.latency_ms[stage] = round((perf_counter() - start) * 1000, 1)
 
     def run(
         self,
@@ -164,278 +70,166 @@ class Pipeline:
         one_shot_global: bool = True,
         enable_cache: bool = True,
     ) -> PipelineResult:
-        """
-        Execute the full RAG pipeline.
-
-        Args:
-            query: User's question.
-            top_k: Number of chunks to retrieve.
-            temperature: LLM temperature.
-            enable_rewrite: Whether to rewrite vague queries.
-            enable_reranking: Whether to LLM-rerank retrieved chunks.
-            one_shot_global: Whether to use fast one-shot synthesis for global community search.
-            enable_cache: Whether to check and populate the semantic response cache.
-
-        Returns:
-            PipelineResult with answer, citations, reliability, and latency.
-        """
-        result = PipelineResult(
-            query=query,
-            model=self.generator.provider.get_model_name(),
+        """Answer a question and retain evidence and diagnostics on every return path."""
+        start = perf_counter()
+        result = PipelineResult(query=query, model=self.generator.provider.get_model_name())
+        namespace = repr(
+            (
+                self._cache_namespace,
+                result.model,
+                top_k,
+                temperature,
+                enable_rewrite,
+                enable_reranking,
+                one_shot_global,
+            )
         )
-        pipeline_start = time.time()
+        if enable_cache:
+            cached = self._load_cached(query, namespace)
+            if cached is not None:
+                return self._finish(cached, start)
 
-        # ── Layer -0.5: Semantic Cache Check ──────────────────────────────
-        if enable_cache and self.semantic_cache:
-            cached_data, sim, hit_type = self.semantic_cache.get(query)
-            if cached_data and hit_type != "miss":
-                result.answer = cached_data.get("answer", "")
-                result.citations = cached_data.get("citations", [])
-                result.should_abstain = cached_data.get("should_abstain", False)
-                result.metadata["cache_hit"] = hit_type
-                result.metadata["cache_similarity"] = sim
-                result.total_latency_ms = round((time.time() - pipeline_start) * 1000, 1)
-                return result
+        retrieval = HybridRetrieval(self.retriever, self.graph_retriever, self.router)
+        retrieval_query = self._process_query(query, enable_rewrite, result)
+        with self._timed(result, "route"):
+            route = retrieval.decide_route(retrieval_query)
+            result.route_mode = route.mode.value
+            result.route_confidence = route.confidence
+            result.route_reason = route.reason
 
-        # ── Layer 0: Query Processing ─────────────────────────────────────
-        retrieval_query = query
-        if self.query_handler and enable_rewrite:
-            t0 = time.time()
+        with self._timed(result, "retrieval"):
             try:
-                processed = self.query_handler.process(query, enable_rewrite=True)
-                result.processed_query = processed
-                retrieval_query = processed.effective_query
-            except Exception as e:
-                logger.warning(f"Query processing failed, using original: {e}")
-            result.latency_ms["query_processing"] = round((time.time() - t0) * 1000, 1)
-
-        # ── Layer 0.5: Route decision ─────────────────────────────────────
-        t0 = time.time()
-        route = self._decide_route(retrieval_query)
-        result.route_mode = route.mode.value
-        result.route_confidence = route.confidence
-        result.route_reason = route.reason
-        result.latency_ms["route"] = round((time.time() - t0) * 1000, 1)
-
-        # ── Layer 1: Retrieval (hybrid + RRF) ─────────────────────────────
-        t0 = time.time()
-        chunks: list[RetrievedChunk] = []
-        try:
-            chunks = self._hybrid_retrieve(
-                retrieval_query,
-                top_k=top_k,
-                enable_reranking=enable_reranking,
-                route=route,
-                one_shot_global=one_shot_global,
-                result=result,
-            )
-            result.retrieved_chunks = chunks
-        except Exception as e:
-            logger.error(f"Retrieval failed: {e}")
-            chunks = []
-        result.latency_ms["retrieval"] = round((time.time() - t0) * 1000, 1)
-
-        # ── Layer 1.5: Corrective RAG (CRAG) Evaluation & Correction ─────
-        t0 = time.time()
-        try:
-            crag_eval = self.crag_evaluator.evaluate(retrieval_query, chunks)
-            result.metadata["crag_action"] = crag_eval.action.value
-            result.metadata["crag_confidence"] = crag_eval.confidence
-
-            if crag_eval.is_ambiguous and crag_eval.suggested_queries:
-                logger.info(f"CRAG triggered corrective search on: {crag_eval.suggested_queries}")
-                corrective_chunks = []
-                for sub_q in crag_eval.suggested_queries:
-                    try:
-                        c_res = self._safe_vector_retrieve(sub_q, top_k=2, enable_reranking=False)
-                        corrective_chunks.extend(c_res)
-                    except Exception as e:
-                        logger.debug(f"Corrective sub-retrieval failed: {e}")
-                if corrective_chunks:
-                    from core.retriever import reciprocal_rank_fusion
-
-                    chunks = reciprocal_rank_fusion([chunks, corrective_chunks])
-                    result.retrieved_chunks = chunks
-        except Exception as e:
-            logger.warning(f"CRAG evaluation failed: {e}")
-        result.latency_ms["crag_eval"] = round((time.time() - t0) * 1000, 1)
-
-        # ── Layer 2: Generation ───────────────────────────────────────────
-        t0 = time.time()
-        try:
-            generated = self.generator.generate(
-                query=query,  # Use ORIGINAL query for generation (not rewritten)
-                chunks=chunks,
-                temperature=temperature,
-            )
-            result.generated = generated
-            result.answer = generated.answer
-            result.citations = generated.citations
-        except Exception as e:
-            logger.error(f"Generation failed: {e}")
-            generated = GeneratedAnswer(
-                answer="An error occurred during generation.",
-                self_confidence=0.0,
-            )
-            result.generated = generated
-            result.answer = generated.answer
-        result.latency_ms["generation"] = round((time.time() - t0) * 1000, 1)
-
-        # ── Layer 3: Reliability Checks ───────────────────────────────────
-        t0 = time.time()
-        try:
-            reliability = self.reliability_checker.check(
-                answer=generated,
-                chunks=chunks,
-            )
-            result.reliability = reliability
-            result.should_abstain = reliability.should_abstain
-            if reliability.should_abstain:
-                result.abstention_message = (
-                    f"{ABSTENTION_MESSAGE}\n\n**Reason:** {reliability.abstention_reason}"
+                chunks, timings = retrieval.retrieve(
+                    retrieval_query,
+                    route,
+                    top_k,
+                    enable_reranking,
+                    one_shot_global,
                 )
-        except Exception as e:
-            logger.error(f"Reliability check failed: {e}")
-            result.reliability = ReliabilityReport(
-                confidence=0.0,
-                should_abstain=True,
-                abstention_reason=f"Reliability check error: {str(e)}",
-            )
-            result.should_abstain = True
-        result.latency_ms["reliability"] = round((time.time() - t0) * 1000, 1)
+                result.retrieved_chunks = chunks
+                result.latency_ms.update(timings)
+            except Exception as exc:
+                logger.error("Retrieval failed: %s", exc)
 
-        # ── Total Latency ─────────────────────────────────────────────────
-        result.total_latency_ms = round((time.time() - pipeline_start) * 1000, 1)
-
-        # ── Logging ───────────────────────────────────────────────────────
-        if self.query_logger:
-            try:
-                self.query_logger.log(result)
-            except Exception as e:
-                logger.error(f"Logging failed: {e}")
-
-        # ── Populate Cache ────────────────────────────────────────────────
-        if enable_cache and self.semantic_cache and not result.should_abstain and result.answer:
-            try:
-                self.semantic_cache.put(
-                    query=query,
-                    query_embedding=[],
-                    payload={
-                        "answer": result.answer,
-                        "citations": result.citations,
-                        "should_abstain": result.should_abstain,
-                        "total_latency_ms": result.total_latency_ms,
-                    },
-                )
-            except Exception as e:
-                logger.debug(f"Cache population failed: {e}")
-
+        self._correct_retrieval(retrieval_query, retrieval, result)
+        self._generate(query, temperature, result)
+        self._verify(result)
+        self._finish(result, start)
+        if enable_cache:
+            self._store_cached(query, namespace, result)
         return result
 
-    # ── Hybrid retrieval helpers ─────────────────────────────────────────────
+    def _process_query(self, query, enable_rewrite, result):
+        if self.query_handler is None or not enable_rewrite:
+            return query
+        with self._timed(result, "query_processing"):
+            try:
+                result.processed_query = self.query_handler.process(query, enable_rewrite=True)
+                return result.processed_query.effective_query
+            except Exception as exc:
+                logger.warning("Query processing failed, using original: %s", exc)
+                return query
 
-    def _decide_route(self, query: str):
-        """Invoke the QueryRouter, or fall back to LOCAL if unconfigured."""
-        if self.router is not None:
-            return self.router.route(query)
-        try:
-            from graph.router import RouteDecision, RouteMode
-
-            return RouteDecision(
-                mode=RouteMode.LOCAL,
-                confidence=1.0,
-                reason="Default local route (No router configured)",
-            )
-        except Exception as e:
-            from graph.router import RouteDecision, RouteMode
-
-            return RouteDecision(
-                mode=RouteMode.LOCAL,
-                confidence=0.0,
-                reason=f"Router error: {e}",
-            )
-
-    def _hybrid_retrieve(
-        self,
-        query: str,
-        top_k: int | None,
-        enable_reranking: bool,
-        route,
-        one_shot_global: bool = True,
-        result: PipelineResult | None = None,
-    ) -> list[RetrievedChunk]:
-        """Run vector + graph retrievers in parallel when applicable."""
-        tasks: dict = {}
-
-        with ThreadPoolExecutor(max_workers=3) as pool:
-            if route.run_vector:
-                tasks["vector"] = pool.submit(
-                    self._safe_vector_retrieve, query, top_k, enable_reranking
+    def _correct_retrieval(self, query, retrieval, result):
+        with self._timed(result, "crag_eval"):
+            try:
+                evaluation = self.crag_evaluator.evaluate(query, result.retrieved_chunks)
+                result.metadata.update(
+                    crag_action=evaluation.action.value,
+                    crag_confidence=evaluation.confidence,
                 )
-            if route.run_graph_local and self.graph_retriever is not None:
-                tasks["graph_local"] = pool.submit(self._safe_graph_local, query)
-            if route.run_graph_global and self.graph_retriever is not None:
-                tasks["graph_global"] = pool.submit(self._safe_graph_global, query, one_shot_global)
+                if evaluation.is_ambiguous and evaluation.suggested_queries:
+                    corrective = []
+                    for sub_query in evaluation.suggested_queries:
+                        corrective.extend(retrieval.vector(sub_query, top_k=2))
+                    if corrective:
+                        result.retrieved_chunks = reciprocal_rank_fusion(
+                            [result.retrieved_chunks, corrective]
+                        )
+            except Exception as exc:
+                logger.warning("CRAG evaluation failed: %s", exc)
 
-            results: dict[str, list[RetrievedChunk]] = {}
-            for name, fut in tasks.items():
-                t_sub = time.time()
-                try:
-                    results[name] = fut.result(timeout=60) or []
-                except Exception as e:
-                    logger.warning(f"{name} retrieval failed: {e}")
-                    results[name] = []
-                if result is not None:
-                    result.latency_ms[f"sub_{name}"] = round((time.time() - t_sub) * 1000, 1)
+    def _generate(self, query, temperature, result):
+        with self._timed(result, "generation"):
+            try:
+                result.generated = self.generator.generate(
+                    query=query,
+                    chunks=result.retrieved_chunks,
+                    temperature=temperature,
+                )
+            except Exception as exc:
+                logger.error("Generation failed: %s", exc)
+                result.metadata["generation_error"] = str(exc)
+                result.generated = GeneratedAnswer(
+                    answer="An error occurred during generation.",
+                    self_confidence=0.0,
+                )
+            result.answer = result.generated.answer
+            result.citations = result.generated.citations
 
-        # Community chunks (Global Search) are macro-synthesized answers, prioritized first
-        global_chunks = results.get("graph_global", [])
-        vector_chunks = results.get("vector", [])
-        local_chunks = results.get("graph_local", [])
+    def _verify(self, result):
+        with self._timed(result, "reliability"):
+            try:
+                result.reliability = self.reliability_checker.check(
+                    answer=result.generated,
+                    chunks=result.retrieved_chunks,
+                )
+            except Exception as exc:
+                logger.error("Reliability check failed: %s", exc)
+                result.reliability = ReliabilityReport(
+                    confidence=0.0,
+                    should_abstain=True,
+                    abstention_reason=f"Reliability check error: {exc}",
+                )
+            if "generation_error" in result.metadata:
+                result.reliability.should_abstain = True
+                result.reliability.abstention_reason = "Answer generation failed."
+            result.should_abstain = result.reliability.should_abstain
+            if result.should_abstain:
+                result.abstention_message = (
+                    f"{ABSTENTION_MESSAGE}\n\n**Reason:** {result.reliability.abstention_reason}"
+                )
 
-        # Fuse vector and local graph rankings using Reciprocal Rank Fusion (RRF)
-        from core.retriever import reciprocal_rank_fusion
+    def _finish(self, result, start):
+        result.total_latency_ms = round((perf_counter() - start) * 1000, 1)
+        if self.query_logger is not None:
+            try:
+                self.query_logger.log(result)
+            except Exception as exc:
+                logger.error("Logging failed: %s", exc)
+        return result
 
-        detail_lists = [chunk_list for chunk_list in [vector_chunks, local_chunks] if chunk_list]
-        fused_details = reciprocal_rank_fusion(detail_lists) if detail_lists else []
-
-        merged: list[RetrievedChunk] = []
-        seen_ids: set[str] = set()
-
-        for c in global_chunks:
-            if c.chunk_id not in seen_ids:
-                merged.append(c)
-                seen_ids.add(c.chunk_id)
-
-        for c in fused_details:
-            if c.chunk_id not in seen_ids:
-                merged.append(c)
-                seen_ids.add(c.chunk_id)
-
-        return merged
-
-    def _safe_vector_retrieve(self, query, top_k, enable_reranking) -> list[RetrievedChunk]:
+    def _load_cached(self, query, namespace):
+        if self.semantic_cache is None:
+            return None
         try:
-            return self.retriever.retrieve(query, top_k=top_k, enable_reranking=enable_reranking)
-        except Exception as e:
-            logger.warning(f"Vector retrieval failed: {e}")
-            return []
+            payload, similarity, hit_type = self.semantic_cache.get(query, namespace=namespace)
+            if hit_type == "miss" or not payload:
+                return None
+            snapshot = payload.get("result")
+            # Old or incomplete entries cannot bypass the evidence checks.
+            if not isinstance(snapshot, PipelineResult) or snapshot.reliability is None:
+                return None
+            if snapshot.should_abstain or snapshot.reliability.should_abstain:
+                return None
+            result = deepcopy(snapshot)
+            result.query = query
+            result.latency_ms = {}
+            result.metadata.update(cache_hit=hit_type, cache_similarity=similarity)
+            return result
+        except Exception as exc:
+            logger.warning("Cache lookup failed, running pipeline: %s", exc)
+            return None
 
-    def _safe_graph_local(self, query) -> list[RetrievedChunk]:
+    def _store_cached(self, query, namespace, result):
+        if self.semantic_cache is None or result.should_abstain or not result.answer:
+            return
         try:
-            return self.graph_retriever.local_search(query)
-        except Exception as e:
-            logger.warning(f"Graph local retrieval failed: {e}")
-            return []
-
-    def _safe_graph_global(self, query, one_shot: bool = True) -> list[RetrievedChunk]:
-        try:
-            import inspect
-
-            sig = inspect.signature(self.graph_retriever.global_search)
-            if "one_shot" in sig.parameters:
-                return self.graph_retriever.global_search(query, one_shot=one_shot)
-            return self.graph_retriever.global_search(query)
-        except Exception as e:
-            logger.warning(f"Graph global retrieval failed: {e}")
-            return []
+            self.semantic_cache.put(
+                query=query,
+                query_embedding=[],
+                namespace=namespace,
+                payload={"result": deepcopy(result), "total_latency_ms": result.total_latency_ms},
+            )
+        except Exception as exc:
+            logger.warning("Cache population failed: %s", exc)

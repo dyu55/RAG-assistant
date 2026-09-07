@@ -4,7 +4,7 @@ Provides two-tier caching:
 1. Exact-match KV Cache (sub-millisecond normalized string lookup)
 2. Semantic Vector Cache (cosine similarity lookup with intent & keyword verification)
 
-Reduces pipeline latency from ~1-3s to <5ms and drastically reduces LLM token costs.
+Caches verified responses with isolated payloads and bounded storage.
 """
 
 from __future__ import annotations
@@ -13,7 +13,10 @@ import logging
 import math
 import re
 import time
+from collections import OrderedDict
+from copy import deepcopy
 from dataclasses import dataclass, field
+from threading import RLock
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +31,13 @@ class CachedItem:
     payload: dict
     created_at: float
     ttl_seconds: float
+    namespace: str = ""
     hits: int = 0
     last_accessed: float = field(default_factory=time.time)
 
     @property
     def is_expired(self) -> bool:
-        return (time.time() - self.created_at) > self.ttl_seconds
+        return (time.time() - self.created_at) >= self.ttl_seconds
 
 
 @dataclass
@@ -79,99 +83,85 @@ def _cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
 
 def _normalize_query(query: str) -> str:
     """Canonical string for exact cache key matching."""
-    s = query.lower().strip()
-    s = re.sub(r"\s+", " ", s)
-    s = re.sub(r"[^\w\s]", "", s)
-    return s
+    return re.sub(r"\s+", " ", query.casefold().strip())
 
 
 class SemanticCache:
-    """
-    Two-tier hierarchical semantic cache with LRU eviction and TTL expiry.
+    """Thread-safe LRU cache with TTL and optional semantic lookup.
+
+    Namespaces isolate pipelines and run options. Exact normalization preserves
+    punctuation so queries about C++ and C# cannot share an exact entry.
     """
 
     def __init__(
         self,
         max_size: int = 500,
         similarity_threshold: float = 0.95,
-        default_ttl_seconds: float = 86400.0,  # 24 hours
+        default_ttl_seconds: float = 86400.0,
         keyword_overlap_threshold: float = 0.60,
     ):
+        if max_size < 1:
+            raise ValueError("max_size must be positive")
         self.max_size = max_size
         self.similarity_threshold = similarity_threshold
         self.default_ttl_seconds = default_ttl_seconds
         self.keyword_overlap_threshold = keyword_overlap_threshold
-
-        self._exact_map: dict[str, CachedItem] = {}
-        self._items: list[CachedItem] = []
+        self._entries: OrderedDict[tuple[str, str], CachedItem] = OrderedDict()
+        self._lock = RLock()
         self.stats = CacheStats()
+
+    def _prune_expired(self):
+        for key in [key for key, item in self._entries.items() if item.is_expired]:
+            del self._entries[key]
+
+    def _hit(self, key, item, similarity, hit_type):
+        item.hits += 1
+        item.last_accessed = time.time()
+        self._entries.move_to_end(key)
+        if hit_type == "exact":
+            self.stats.exact_hits += 1
+        else:
+            self.stats.semantic_hits += 1
+        self.stats.saved_latency_ms += item.payload.get("total_latency_ms", 0.0)
+        return deepcopy(item.payload), round(similarity, 4), hit_type
 
     def get(
         self,
         query: str,
         query_embedding: list[float] | None = None,
         threshold: float | None = None,
+        *,
+        namespace: str = "",
     ) -> tuple[dict | None, float, str]:
-        """
-        Query the cache.
+        """Return an independent payload, similarity and exact/semantic/miss status."""
+        with self._lock:
+            self.stats.total_lookups += 1
+            self._prune_expired()
+            query_norm = _normalize_query(query)
+            key = (namespace, query_norm)
+            item = self._entries.get(key)
+            if item is not None:
+                return self._hit(key, item, 1.0, "exact")
 
-        Returns:
-            (payload, similarity_score, hit_type) where hit_type is 'exact', 'semantic', or 'miss'.
-        """
-        self.stats.total_lookups += 1
-        query_norm = _normalize_query(query)
-        effective_threshold = threshold or self.similarity_threshold
-
-        # 1. Tier 1: Exact string match
-        if query_norm in self._exact_map:
-            item = self._exact_map[query_norm]
-            if not item.is_expired:
-                item.hits += 1
-                item.last_accessed = time.time()
-                self.stats.exact_hits += 1
-                saved_lat = item.payload.get("total_latency_ms", 1200.0)
-                self.stats.saved_latency_ms += saved_lat
-                logger.info(f"SemanticCache Tier 1 (Exact Hit) for: '{query[:40]}'")
-                return item.payload, 1.0, "exact"
-            else:
-                self._evict_item(item)
-
-        # 2. Tier 2: Semantic embedding match
-        if query_embedding and self._items:
-            q_tokens = set(re.findall(r"\w+", query_norm))
-            best_score = 0.0
-            best_item: CachedItem | None = None
-
-            for item in self._items:
-                if item.is_expired:
-                    continue
-                sim = _cosine_similarity(query_embedding, item.embedding)
-                if sim > best_score:
-                    best_score = sim
-                    best_item = item
-
-            if best_item and best_score >= effective_threshold:
-                # Anti-Poisoning: Verify keyword overlap to prevent false positive semantic drift
-                c_tokens = set(re.findall(r"\w+", best_item.query_norm))
-                overlap = (
-                    len(q_tokens & c_tokens) / max(min(len(q_tokens), len(c_tokens)), 1)
-                    if q_tokens and c_tokens
-                    else 1.0
-                )
-
-                if overlap >= self.keyword_overlap_threshold:
-                    best_item.hits += 1
-                    best_item.last_accessed = time.time()
-                    self.stats.semantic_hits += 1
-                    saved_lat = best_item.payload.get("total_latency_ms", 1200.0)
-                    self.stats.saved_latency_ms += saved_lat
-                    logger.info(
-                        f"SemanticCache Tier 2 (Semantic Hit, sim={best_score:.3f}) for: '{query[:40]}'"
-                    )
-                    return best_item.payload, round(best_score, 4), "semantic"
-
-        self.stats.misses += 1
-        return None, 0.0, "miss"
+            effective_threshold = self.similarity_threshold if threshold is None else threshold
+            best = None
+            best_score = -1.0
+            if query_embedding:
+                q_tokens = set(re.findall(r"\w+", query_norm))
+                for candidate_key, candidate in self._entries.items():
+                    if candidate.namespace != namespace or not candidate.embedding:
+                        continue
+                    c_tokens = set(re.findall(r"\w+", candidate.query_norm))
+                    overlap = len(q_tokens & c_tokens) / max(min(len(q_tokens), len(c_tokens)), 1)
+                    if overlap < self.keyword_overlap_threshold:
+                        continue
+                    similarity = _cosine_similarity(query_embedding, candidate.embedding)
+                    if similarity >= effective_threshold and similarity > best_score:
+                        best, best_score = (candidate_key, candidate), similarity
+            if best is not None:
+                return self._hit(*best, best_score, "semantic")
+            self.stats.misses += 1
+            return None, 0.0, "miss"
 
     def put(
         self,
@@ -179,52 +169,38 @@ class SemanticCache:
         query_embedding: list[float],
         payload: dict,
         ttl_seconds: float | None = None,
+        *,
+        namespace: str = "",
     ) -> None:
-        """Insert or update a response in the cache."""
+        """Upsert one entry without evicting unrelated entries on replacement."""
         if not query.strip() or not payload:
             return
-
-        query_norm = _normalize_query(query)
-        ttl = ttl_seconds or self.default_ttl_seconds
-
-        # Enforce LRU eviction if full
-        if len(self._items) >= self.max_size:
-            self._evict_lru()
-
-        item = CachedItem(
-            query=query,
-            query_norm=query_norm,
-            embedding=query_embedding,
-            payload=payload,
-            created_at=time.time(),
-            ttl_seconds=ttl,
-        )
-
-        self._exact_map[query_norm] = item
-        self._items.append(item)
-
-    def _evict_item(self, item: CachedItem) -> None:
-        """Evict a specific item."""
-        if item.query_norm in self._exact_map:
-            del self._exact_map[item.query_norm]
-        if item in self._items:
-            self._items.remove(item)
-
-    def _evict_lru(self) -> None:
-        """Evict least recently accessed item."""
-        if not self._items:
-            return
-        # Find oldest access
-        self._items.sort(key=lambda x: x.last_accessed)
-        oldest = self._items.pop(0)
-        if oldest.query_norm in self._exact_map:
-            del self._exact_map[oldest.query_norm]
+        ttl = self.default_ttl_seconds if ttl_seconds is None else ttl_seconds
+        key = (namespace, _normalize_query(query))
+        with self._lock:
+            self._prune_expired()
+            self._entries.pop(key, None)
+            if ttl <= 0:
+                return
+            self._entries[key] = CachedItem(
+                query=query,
+                query_norm=key[1],
+                namespace=namespace,
+                embedding=list(query_embedding),
+                payload=deepcopy(payload),
+                created_at=time.time(),
+                ttl_seconds=ttl,
+            )
+            while len(self._entries) > self.max_size:
+                self._entries.popitem(last=False)
 
     def clear(self) -> None:
-        """Clear all cache items."""
-        self._exact_map.clear()
-        self._items.clear()
+        """Clear entries while retaining cumulative telemetry."""
+        with self._lock:
+            self._entries.clear()
 
     def size(self) -> int:
-        """Return number of cached items."""
-        return len(self._items)
+        """Return the number of live entries."""
+        with self._lock:
+            self._prune_expired()
+            return len(self._entries)

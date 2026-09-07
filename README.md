@@ -49,7 +49,7 @@ User Question
 ### 1. Clone and set up
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/dyu55/RAG-assistant.git
 cd RAG-assistant
 
 # Create virtual environment
@@ -57,7 +57,10 @@ python3 -m venv .venv
 source .venv/bin/activate
 
 # Install dependencies
-pip install -r requirements.txt
+python -m pip install .
+
+# Optional local embedding backend
+python -m pip install ".[local]"
 ```
 
 ### 2. Configure
@@ -94,6 +97,10 @@ Then open `http://localhost:8501` in your browser.
 │   ├── chunker.py             # Recursive text chunking with overlap
 │   └── embedder.py            # Embedding generation + ChromaDB storage
 ├── core/
+│   ├── models.py              # Shared retrieval and answer data contracts
+│   ├── result.py              # Pipeline result and log serialization
+│   ├── retrieval.py           # Routing and parallel retrieval
+│   ├── cache.py               # Isolated LRU response cache
 │   ├── retriever.py           # Vector similarity search
 │   ├── generator.py           # Constrained answer generation
 │   ├── reliability.py         # ⭐ Citation, grounding, confidence, abstention
@@ -144,6 +151,24 @@ Every query is logged to `data/logs/queries.jsonl` with:
 - Full reliability report (scores, verdict, abstention reason)
 - Per-layer latency (retrieval, generation, reliability check)
 - Model name and configuration
+
+## Development and cache lifecycle
+
+```bash
+python -m pip install -e ".[dev]"
+python -m pytest
+make lint
+make security
+python -m build
+```
+
+RRF controls ranking through `chunk.metadata["rrf_score"]`; `chunk.score` remains the original relevance signal used by CRAG and reliability checks. Cache hits retain the full evidence and reliability report and are logged like fresh answers.
+
+Applications that inject `SemanticCache` into a long-lived `Pipeline` must call `pipeline.invalidate_cache()` after changing documents or pipeline configuration. Cache namespaces isolate pipeline instances and generation/retrieval options. The built-in pipeline uses exact response caching; semantic lookup is available through `SemanticCache.get(..., query_embedding=...)` when a caller supplies an embedding.
+
+The default Docker image uses API embeddings. To include local embedding models, build with `docker build --build-arg INSTALL_LOCAL_EMBEDDINGS=true -t rag-assistant:local .`.
+
+See [the refactoring report](docs/REFACTORING.md) for validation and compatibility details.
 
 ## License
 

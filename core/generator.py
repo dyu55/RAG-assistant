@@ -13,9 +13,10 @@ The chunk_id in each citation is the chunk_id from the corresponding source.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
 
-from core.retriever import RetrievedChunk
+from core.models import Citation as Citation
+from core.models import GeneratedAnswer as GeneratedAnswer
+from core.models import RetrievedChunk
 from providers.base import Provider
 
 logger = logging.getLogger(__name__)
@@ -55,33 +56,6 @@ CONFIDENCE SCALE:
 - 0.5-0.7: Answer is partially supported, some uncertainty
 - 0.0-0.5: Very weak support, mostly uncertain
 """
-
-
-@dataclass
-class Citation:
-    """A single citation linking an answer claim to a source chunk."""
-
-    source_index: int
-    chunk_id: str
-    quote: str
-    # Origin of the cited chunk: "vector", "graph", or "community".
-    # Populated automatically from the RetrievedChunk.metadata.
-    source_type: str = "vector"
-
-
-@dataclass
-class GeneratedAnswer:
-    """Structured answer from the LLM with citations and confidence."""
-
-    answer: str
-    citations: list[Citation] = field(default_factory=list)
-    self_confidence: float = 0.0
-    reasoning: str = ""
-    raw_response: dict = field(default_factory=dict)
-
-    @property
-    def has_citations(self) -> bool:
-        return len(self.citations) > 0
 
 
 class Generator:

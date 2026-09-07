@@ -31,3 +31,10 @@ data/logs/*
 # OS
 .DS_Store
 Thumbs.db
+
+# Test and build reports
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+logs/

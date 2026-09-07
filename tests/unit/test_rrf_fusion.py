@@ -30,10 +30,12 @@ class TestReciprocalRankFusion:
         fused = reciprocal_rank_fusion([[c1, c2, c3]], k=60)
         assert len(fused) == 3
         assert [c.chunk_id for c in fused] == ["c1", "c2", "c3"]
+        assert [c.score for c in fused] == [0.9, 0.7, 0.5]
+        assert [c.effective_score for c in fused] == [0.9, 0.7, 0.5]
         # Score calculation: 1.0 / (60 + 1) = 0.01639
-        assert fused[0].score == pytest.approx(1.0 / 61, abs=1e-4)
-        assert fused[1].score == pytest.approx(1.0 / 62, abs=1e-4)
-        assert fused[2].score == pytest.approx(1.0 / 63, abs=1e-4)
+        assert fused[0].metadata["rrf_score"] == pytest.approx(1.0 / 61, abs=1e-4)
+        assert fused[1].metadata["rrf_score"] == pytest.approx(1.0 / 62, abs=1e-4)
+        assert fused[2].metadata["rrf_score"] == pytest.approx(1.0 / 63, abs=1e-4)
 
     def test_consensus_boosts_common_item(self):
         # c2 appears in BOTH list 1 (rank 2) and list 2 (rank 1)
@@ -57,7 +59,11 @@ class TestReciprocalRankFusion:
         assert fused[0].chunk_id == "c2"  # Consensus item wins!
         assert fused[1].chunk_id == "c1"
         assert fused[2].chunk_id == "c3"
-        assert fused[0].score > fused[1].score > fused[2].score
+        assert (
+            fused[0].metadata["rrf_score"]
+            > fused[1].metadata["rrf_score"]
+            > fused[2].metadata["rrf_score"]
+        )
         assert "rrf_score" in fused[0].metadata
 
     def test_weighted_fusion_prioritizes_higher_weight_channel(self):
@@ -68,8 +74,8 @@ class TestReciprocalRankFusion:
         fused = reciprocal_rank_fusion([[c1], [c2]], weights=[2.0, 1.0], k=60)
         assert len(fused) == 2
         assert fused[0].chunk_id == "c1"
-        assert fused[0].score == pytest.approx(2.0 / 61, abs=1e-4)
-        assert fused[1].score == pytest.approx(1.0 / 61, abs=1e-4)
+        assert fused[0].metadata["rrf_score"] == pytest.approx(2.0 / 61, abs=1e-4)
+        assert fused[1].metadata["rrf_score"] == pytest.approx(1.0 / 61, abs=1e-4)
 
     def test_uneven_list_lengths_handled_gracefully(self):
         c1 = self._create_chunk("c1")

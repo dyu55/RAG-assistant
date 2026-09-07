@@ -2,7 +2,7 @@
 # Multi-stage Dockerfile for RAG Assistant
 # ==============================================================================
 
-FROM python:3.11-slim as base
+FROM python:3.11-slim AS base
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -28,6 +28,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application source
 COPY . .
+
+# Opt in to local embedding models without enlarging the default image.
+ARG INSTALL_LOCAL_EMBEDDINGS=false
+RUN if [ "$INSTALL_LOCAL_EMBEDDINGS" = "true" ]; then pip install ".[local]"; fi
 
 # Create non-root user for security
 RUN useradd -m -u 1000 appuser && \

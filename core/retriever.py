@@ -13,10 +13,13 @@ retrieval path produced it:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from config import settings
-from ingestion.embedder import Embedder
+from core.models import RetrievedChunk as RetrievedChunk
+
+if TYPE_CHECKING:
+    from ingestion.embedder import Embedder
 
 logger = logging.getLogger(__name__)
 
@@ -33,43 +36,6 @@ Score from 0.0 to 1.0:
 Respond with ONLY a JSON object:
 {"relevance_score": 0.85, "reason": "brief explanation"}
 """
-
-
-@dataclass
-class RetrievedChunk:
-    """A chunk retrieved from a vector store or graph traversal with its relevance score."""
-
-    chunk_id: str
-    text: str
-    score: float  # Similarity score (higher = more relevant)
-    rerank_score: float = -1  # LLM reranking score (-1 = not reranked)
-    metadata: dict = field(default_factory=dict)
-
-    @property
-    def source(self) -> str:
-        """Filename of the originating document (vector path) or graph label."""
-        # Prefer an explicit filename stored by the embedder. Graph/community
-        # chunks typically don't have one, so we fall back to a label.
-        return self.metadata.get("filename") or self.metadata.get("source", "vector")
-
-    @property
-    def retrieval_source(self) -> str:
-        """Which retrieval path produced this chunk.
-
-        One of:
-        - "vector"     — ChromaDB cosine similarity (the default)
-        - "graph"      — entity-anchored subgraph traversal (GraphRAG local)
-        - "community"  — map-reduce over community summaries (GraphRAG global)
-        """
-        src = self.metadata.get("source")
-        if src in {"vector", "graph", "community"}:
-            return src
-        return "vector"
-
-    @property
-    def effective_score(self) -> float:
-        """Best available score (rerank if available, else similarity)."""
-        return self.rerank_score if self.rerank_score >= 0 else self.score
 
 
 def reciprocal_rank_fusion(
@@ -89,7 +55,8 @@ def reciprocal_rank_fusion(
         k: Smoothing constant (industry standard is 60).
 
     Returns:
-        Deduplicated and fused list of RetrievedChunk objects sorted by fused score descending.
+        Chunks ordered by metadata["rrf_score"]. Original relevance scores are
+        preserved for CRAG and reliability thresholds; RRF scores are not confidence.
     """
     if not ranked_lists:
         return []
@@ -104,8 +71,12 @@ def reciprocal_rank_fusion(
     for weight, rlist in zip(weights, ranked_lists):
         if not rlist:
             continue
+        seen = set()
         for rank_idx, chunk in enumerate(rlist, start=1):
             cid = chunk.chunk_id
+            if cid in seen:
+                continue
+            seen.add(cid)
             if cid not in chunk_map:
                 chunk_map[cid] = chunk
             # Accumulate RRF score
@@ -121,7 +92,7 @@ def reciprocal_rank_fusion(
         fused_chunk = RetrievedChunk(
             chunk_id=orig.chunk_id,
             text=orig.text,
-            score=round(fused_scores[cid], 5),
+            score=orig.score,
             rerank_score=orig.rerank_score,
             metadata=dict(orig.metadata, rrf_score=round(fused_scores[cid], 5)),
         )

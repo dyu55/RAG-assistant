@@ -8,6 +8,21 @@ version = "0.2.0"
 description = "Reliable GraphRAG & Vector Knowledge Retrieval Assistant"
 readme = "README.md"
 requires-python = ">=3.9"
+dynamic = ["dependencies"]
+
+[project.optional-dependencies]
+local = ["sentence-transformers>=2.7.0"]
+dev = ["pytest>=8.0.0", "pytest-cov>=4.0.0", "pytest-mock>=3.14.0", "ruff>=0.5.0", "bandit>=1.7.9", "build>=1.0"]
+
+[tool.setuptools]
+py-modules = ["app"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[tool.setuptools.packages.find]
+include = ["config*", "core*", "graph*", "ingestion*", "evaluation*", "providers*", "ui*"]
+namespaces = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
