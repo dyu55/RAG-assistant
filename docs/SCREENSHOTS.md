@@ -1,35 +1,61 @@
-# Screenshots
+# Interface gallery
 
-Captured in Chromium through actual application interactions on 2026-09-08. Desktop viewport: 1440 × 1050. Mobile viewport: 390 × 844. Full-page images retain their natural height.
+Captured in Chromium from the redesigned application on 2026-09-08. See [design notes](DESIGN.md) for layout and interaction decisions. Desktop viewport: 1440 × 1050; mobile viewport: 390 × 844. Original PNG dimensions are listed below.
 
-RAG uses the bundled fictional Atlas corpus in offline extractive mode. MyAgent uses a labelled deterministic model replay with real file operations, pytest execution, and persisted run state. These images do not demonstrate live model performance.
+The RAG screenshots use the fictional Atlas corpus in offline extractive mode.
 
-## RAG Assistant — Answers with source citations
+## RAG Assistant — The Reading Room
 
-![RAG Assistant — Answers with source citations](screenshots/rag-answer.png)
+![RAG Assistant — The Reading Room](screenshots/rag-reading-room.png)
 
-Hybrid keyword, vector and graph retrieval with inspectable source excerpts.
+An editorial research workspace with a horizontal directory, a focused question composer, and cobalt reference marks.
 
-## RAG Assistant — Document connections
+1440 × 1050 PNG
 
-![RAG Assistant — Document connections](screenshots/rag-graph.png)
+## RAG Assistant — Read the evidence
 
-Explore entity co-occurrence and follow relationships back to document passages.
+![RAG Assistant — Read the evidence](screenshots/rag-answer.png)
 
-## RAG Assistant — Document library
+An answer presented as a readable article with traceable source passages in the margin.
 
-![RAG Assistant — Document library](screenshots/rag-library.png)
+1425 × 1764 PNG
 
-Import PDF, Markdown, TXT and HTML files into a persistent local library.
+## RAG Assistant — The collection
 
-## RAG Assistant — Evidence-aware abstention
+![RAG Assistant — The collection](screenshots/rag-library.png)
 
-![RAG Assistant — Evidence-aware abstention](screenshots/rag-abstention.png)
+A numbered document index with import, removal, and passage metadata.
 
-The workbench withholds answers when the selected documents do not provide sufficient evidence.
+1425 × 1066 PNG
 
-## RAG Assistant — Mobile workspace
+## RAG Assistant — A connected atlas
 
-![RAG Assistant — Mobile workspace](screenshots/rag-mobile.png)
+![RAG Assistant — A connected atlas](screenshots/rag-graph.png)
 
-The same question-and-source workflow on a narrow screen.
+Explore entity co-occurrence and select a name to start a source-based question.
+
+1425 × 1190 PNG
+
+## RAG Assistant — Evidence comes first
+
+![RAG Assistant — Evidence comes first](screenshots/rag-abstention.png)
+
+The answer is withheld when the document collection cannot support it.
+
+1440 × 1050 PNG
+
+## RAG Assistant — The notebook
+
+![RAG Assistant — The notebook](screenshots/rag-history.png)
+
+Return to a saved question with its original references and index revision.
+
+1440 × 1050 PNG
+
+## RAG Assistant — A reading column
+
+![RAG Assistant — A reading column](screenshots/rag-mobile.png)
+
+A responsive question-and-reference workflow designed for a narrow screen.
+
+375 × 2650 PNG

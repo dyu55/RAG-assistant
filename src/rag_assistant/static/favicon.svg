@@ -1,1 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" rx="12" fill="#203d38"/><text x="12" y="35" font-family="Georgia,serif" font-size="36" fill="#ffffff">r.</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
+  <rect width="40" height="40" fill="white" />
+  <g fill="#224de0" transform="skewY(-12)">
+    <path d="M8 12h6v25H8zM17 7h6v32h-6zM26 13h6v25h-6z" />
+  </g>
+</svg>

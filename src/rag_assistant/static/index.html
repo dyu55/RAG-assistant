@@ -1,30 +1,254 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/static/favicon.svg" type="image/svg+xml"><title>RAG Assistant · Evidence Desk</title><link rel="stylesheet" href="/static/style.css"><script src="/static/app.js" defer></script></head>
-<body>
-<aside class="sidebar">
-  <a class="brand" href="/" aria-label="RAG Assistant home"><span class="brand-mark">r.</span><span>RAG Assistant<small>EVIDENCE DESK / 01</small></span></a>
-  <div class="workspace-label">YOUR WORKSPACE</div>
-  <nav aria-label="Workspace"><button class="nav active" data-view="ask"><span>◈</span> Ask your knowledge</button><button class="nav" data-view="graph"><span>⌘</span> Explore connections</button><button class="nav" data-view="history"><span>↺</span> Recent questions</button></nav>
-  <div class="library-heading"><span>DOCUMENT LIBRARY</span><span id="document-count">0</span></div>
-  <div id="documents" class="document-list"></div>
-  <label class="upload-button" for="upload">＋ Add documents</label><input id="upload" type="file" multiple accept=".pdf,.md,.txt,.html,.htm,.markdown" hidden>
-  <p class="upload-hint">PDF, Markdown, text or HTML · up to 15 MB each</p>
-  <button id="demo" class="demo-button">Try the example library <span>↗</span></button>
-  <div class="sidebar-footer"><span class="live-dot"></span><span id="provider-label">Local workspace</span><small>Your sources. Your context.</small></div>
-</aside>
-<main>
-  <header class="topbar"><span id="breadcrumb">Workspace <span>/</span> Ask your knowledge</span><span class="local-badge"><span class="live-dot"></span> LOCAL FIRST</span></header>
-  <div id="notification" role="status" aria-live="polite" hidden></div>
-  <section id="ask-view" class="view">
-    <div class="intro"><div class="eyebrow">FROM DOCUMENTS TO UNDERSTANDING</div><h1>Answers with a paper trail.</h1><p>Ask a question. Follow the evidence. See exactly where your answer comes from.</p></div>
-    <form id="question-form" class="question-box"><label class="sr-only" for="question">Ask a question about your documents</label><textarea id="question" rows="2" maxlength="2000" placeholder="What would you like to understand?" required></textarea><div class="question-controls"><div><label for="mode" class="sr-only">Retrieval method</label><select id="mode"><option value="hybrid">◈ Hybrid retrieval</option><option value="keyword">Keyword retrieval</option><option value="vector">Vector retrieval</option><option value="graph">Graph retrieval</option></select><label for="filter" class="sr-only">Document filter</label><select id="filter"><option value="">All documents</option></select></div><button id="ask-button" type="submit">Find an answer <span>↗</span></button></div></form>
-    <div class="suggestions"><span>TRY ASKING</span><button>How does Atlas handle a Redis outage?</button><button>How long are Postgres backups retained?</button></div>
-    <div id="empty-state" class="empty-state"><div class="empty-orbit">◈</div><h2>A little context goes a long way.</h2><p>Add your documents or load the example library.<br>Your answers and their sources will appear here.</p><div class="feature-row"><span>01 &nbsp; Retrieve</span><i>→</i><span>02 &nbsp; Connect</span><i>→</i><span>03 &nbsp; Verify</span></div></div>
-    <div id="answer-layout" class="answer-layout" hidden><article class="answer-card"><div class="section-heading"><span>THE ANSWER</span><span id="verdict" class="pill"></span></div><h2 id="answer-question"></h2><div id="answer-text"></div><div id="answer-warnings"></div><div class="answer-meta" id="answer-meta"></div><div class="verification"><span>✓</span><div><strong id="verification-title">Citation checks</strong><p id="verification-text"></p><small>Textual support is checked; this is not a guarantee of factual correctness.</small></div></div><button id="export" class="text-button">Download answer & evidence ↓</button></article><aside class="sources-panel"><div class="section-heading"><span>FOLLOW THE EVIDENCE</span><span id="source-count"></span></div><div id="sources"></div></aside></div>
-  </section>
-  <section id="graph-view" class="view" hidden><div class="intro"><div class="eyebrow">THE CONTEXT BETWEEN THE LINES</div><h1>Knowledge is connected.</h1><p>Explore the names and systems that appear together in your documents.</p></div><div class="graph-card"><div class="section-heading"><span>DOCUMENT CONNECTIONS</span><span id="graph-count" class="pill"></span></div><svg id="network" viewBox="0 0 960 540" role="img" aria-label="Entity co-occurrence graph"></svg><p class="graph-note">A line means two entities share a passage. It does not imply causation. Select an entity to explore its context.</p></div><div id="graph-legend" class="graph-legend"></div></section>
-  <section id="history-view" class="view" hidden><div class="intro"><div class="eyebrow">KEEP YOUR THREAD OF THOUGHT</div><h1>Questions worth keeping.</h1><p>Return to an answer, its sources, and the evidence available at the time.</p></div><div id="history" class="history-list"></div></section>
-  <footer>RAG ASSISTANT <span>Evidence before confidence.</span><a href="/docs" target="_blank" rel="noopener">API reference ↗</a></footer>
-</main>
-</body></html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+    <title>RAG Assistant — The Reading Room</title>
+    <link rel="stylesheet" href="/static/style.css" />
+    <script src="/static/app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="masthead">
+      <a class="brand" href="/" aria-label="RAG Assistant home"
+        ><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span
+        ><span>RAG<span class="brand-divider">/</span>ASSISTANT</span></a
+      >
+      <span class="edition">A PLACE FOR YOUR KNOWLEDGE</span>
+      <div class="connection">
+        <span class="live-dot"></span
+        ><span id="provider-label">Local workspace</span>
+      </div>
+    </header>
+    <div class="directory">
+      <nav aria-label="Reading room">
+        <button class="nav active" data-view="ask" aria-current="page">
+          <span>01</span> Reading room
+        </button>
+        <button class="nav" data-view="library">
+          <span>02</span> Collection <b id="document-count">0</b>
+        </button>
+        <button class="nav" data-view="graph"><span>03</span> Atlas</button>
+        <button class="nav" data-view="history">
+          <span>04</span> Notebook
+        </button>
+      </nav>
+      <span class="directory-note">FIND THE SOURCE.</span>
+    </div>
+    <main id="main">
+      <div id="notification" role="status" aria-live="polite" hidden></div>
+      <div class="folio">
+        <span id="breadcrumb">THE READING ROOM</span
+        ><span>PRIVATE LIBRARY / VOL. 01</span>
+      </div>
+      <section id="ask-view" class="view" aria-label="Reading room">
+        <div class="intro reading-intro">
+          <div>
+            <div class="eyebrow">CURIOSITY, WITH REFERENCES.</div>
+            <h1>Go beyond <br />the <em>answer.</em></h1>
+          </div>
+          <div class="intro-note">
+            <span class="note-cross" aria-hidden="true">✳</span>
+            <p>
+              Your documents have a story.<br />Ask a question. Read the
+              evidence.<br />Make the connections yourself.
+            </p>
+            <button class="text-button" id="open-collection">
+              Open your collection <span>↗</span>
+            </button>
+          </div>
+        </div>
+        <form id="question-form" class="question-box">
+          <label for="question" class="question-label"
+            ><span>Q.</span> WHAT ARE YOU LOOKING INTO?</label
+          >
+          <textarea
+            id="question"
+            rows="2"
+            maxlength="2000"
+            placeholder="Ask something of your documents…"
+            required
+          ></textarea>
+          <div class="question-controls">
+            <div class="query-options">
+              <label for="mode" class="sr-only">Retrieval method</label
+              ><select id="mode">
+                <option value="hybrid">Hybrid retrieval</option>
+                <option value="keyword">Keyword retrieval</option>
+                <option value="vector">Vector retrieval</option>
+                <option value="graph">Graph retrieval</option></select
+              ><label for="filter" class="sr-only">Document filter</label
+              ><select id="filter">
+                <option value="">All documents</option>
+              </select>
+            </div>
+            <button id="ask-button" type="submit">
+              Find evidence <span>↗</span>
+            </button>
+          </div>
+        </form>
+        <div class="suggestions">
+          <span>A STARTING POINT</span
+          ><button>How does Atlas handle a Redis outage?</button
+          ><button>How long are Postgres backups retained?</button>
+        </div>
+        <div id="empty-state" class="empty-state">
+          <span class="margin-label">ON THE METHOD</span>
+          <div>
+            <h2>Nothing without a reference.</h2>
+            <p>
+              A good answer should take you back to the page.<br />Add a
+              document to begin, or explore the example collection.
+            </p>
+          </div>
+          <ol class="method">
+            <li><span>01</span> Find a passage</li>
+            <li><span>02</span> Trace a connection</li>
+            <li><span>03</span> Check the source</li>
+          </ol>
+        </div>
+        <div id="answer-layout" class="answer-layout" hidden>
+          <article class="answer-card">
+            <div class="section-heading">
+              <span>THE READING</span><span id="verdict" class="pill"></span>
+            </div>
+            <h2 id="answer-question"></h2>
+            <div id="answer-text"></div>
+            <div id="answer-warnings"></div>
+            <div class="answer-meta" id="answer-meta"></div>
+            <div class="verification">
+              <span aria-hidden="true">↳</span>
+              <div>
+                <strong id="verification-title">Citation checks</strong>
+                <p id="verification-text"></p>
+                <small
+                  >Quotation checks establish textual support, not factual
+                  certainty.</small
+                >
+              </div>
+            </div>
+            <button id="export" class="text-button">
+              Save answer & references ↓
+            </button>
+          </article>
+          <aside class="sources-panel" aria-label="Source references">
+            <div class="section-heading">
+              <span>IN THE MARGINS</span><span id="source-count"></span>
+            </div>
+            <div id="sources"></div>
+          </aside>
+        </div>
+      </section>
+      <section
+        id="library-view"
+        class="view"
+        aria-label="Document collection"
+        hidden
+      >
+        <div class="intro">
+          <div>
+            <div class="eyebrow">YOUR SOURCE MATERIAL</div>
+            <h1>The <em>collection.</em></h1>
+          </div>
+          <p class="intro-description">
+            A personal index of things worth understanding.<br />PDF, Markdown,
+            text, and HTML. Up to 15 MB per file.
+          </p>
+        </div>
+        <div class="collection-toolbar">
+          <span>DOCUMENT INDEX</span>
+          <div>
+            <button id="demo" class="text-button">
+              Load example collection ↗</button
+            ><button id="upload-button" class="primary-button">
+              Add documents ＋</button
+            ><input
+              id="upload"
+              type="file"
+              multiple
+              accept=".pdf,.md,.txt,.html,.htm,.markdown"
+              hidden
+            />
+          </div>
+        </div>
+        <div class="collection-columns" aria-hidden="true">
+          <span>NO.</span><span>TITLE / SOURCE</span
+          ><span>INDEXED PASSAGES</span>
+        </div>
+        <div id="documents" class="document-list"></div>
+        <div class="collection-footnote">
+          <span>↳</span>
+          <p>
+            Documents stay in your local library. Each answer preserves the
+            passages used at the time it was written.
+          </p>
+        </div>
+      </section>
+      <section
+        id="graph-view"
+        class="view"
+        aria-label="Connection atlas"
+        hidden
+      >
+        <div class="intro">
+          <div>
+            <div class="eyebrow">READ BETWEEN THE DOCUMENTS</div>
+            <h1>A connected <em>atlas.</em></h1>
+          </div>
+          <p class="intro-description">
+            Follow the names that share a passage.<br />Select an entity to
+            start a new line of inquiry.
+          </p>
+        </div>
+        <div class="graph-card">
+          <div class="section-heading">
+            <span>FIG. 01 / ENTITY CO-OCCURRENCE</span
+            ><span id="graph-count"></span>
+          </div>
+          <div
+            class="graph-viewport"
+            tabindex="0"
+            role="region"
+            aria-label="Connection map; scroll horizontally on small screens"
+          >
+            <svg
+              id="network"
+              viewBox="0 0 960 540"
+              role="img"
+              aria-label="Entity co-occurrence graph"
+            ></svg>
+          </div>
+          <p class="graph-note">
+            A connection means two entities appear in the same passage. It does
+            not establish a causal or factual relationship.
+          </p>
+        </div>
+        <div id="graph-legend" class="graph-legend"></div>
+      </section>
+      <section
+        id="history-view"
+        class="view"
+        aria-label="Question notebook"
+        hidden
+      >
+        <div class="intro">
+          <div>
+            <div class="eyebrow">LEAVE A THREAD TO FOLLOW</div>
+            <h1>The <em>notebook.</em></h1>
+          </div>
+          <p class="intro-description">
+            Revisit a question and the references behind it.<br />Every entry
+            keeps its original evidence.
+          </p>
+        </div>
+        <div id="history" class="history-list"></div>
+      </section>
+      <footer>
+        <span>RAG / ASSISTANT</span
+        ><span>A question is only the beginning.</span
+        ><a href="/docs" target="_blank" rel="noopener">API reference ↗</a>
+      </footer>
+    </main>
+  </body>
+</html>

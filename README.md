@@ -1,6 +1,6 @@
-# RAG Assistant · Evidence Desk
+# RAG Assistant · The Reading Room
 
-![RAG Assistant — Answers with source citations](docs/screenshots/rag-answer.png)
+![RAG Assistant — The Reading Room](docs/screenshots/rag-reading-room.png)
 
 A local document workbench that answers questions with inspectable sources. Import a document, ask a question, then open every quoted passage behind the answer.
 
@@ -27,6 +27,8 @@ rag-assistant ask 'What do the documents say about backup retention?'
 rag-assistant evaluate
 rag-assistant --data-dir /path/to/another-library serve --port 8001
 ```
+
+The Reading Room uses an editorial layout: a horizontal collection index, spacious reading typography, and source references in the page margin. [Design notes](docs/DESIGN.md) · [Interface gallery](docs/SCREENSHOTS.md).
 
 ## What it does
 

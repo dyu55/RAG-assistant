@@ -15,3 +15,7 @@ The browser check covered demo import, question submission, source display, grap
 The bundled smoke evaluation retrieved the expected source in the top five for all five authored English/Chinese questions, and abstained on one unrelated question. This is a small deterministic fixture result, not a claim of general retrieval accuracy or model quality.
 
 Live Ollama was not running and no paid model endpoint was called. Model HTTP protocols were tested with deterministic in-process transports. Live model task success, semantic embedding quality, cost and latency remain unmeasured. Docker was not running locally; the repository CI container job supplies that validation. Two upstream TestClient deprecation warnings occur in the Python test suite and do not affect the application browser console.
+
+## UI redesign verification — 2026-09-08
+
+The redesigned interface was checked in Chromium at 1440 × 1050 and 390 × 844. The current checkout test suite passed (55 tests), as did Ruff and JavaScript syntax checks. Source screenshots were captured from the running application, including the mobile layout. See `SCREENSHOTS.md` and `DESIGN.md` for the new interface and capture context.
