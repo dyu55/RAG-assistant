@@ -22,6 +22,7 @@ packages = ["src/rag_assistant"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
 addopts = "-q --strict-markers"
 
 [tool.ruff]
