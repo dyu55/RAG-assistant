@@ -1,175 +1,98 @@
-# 🔍 RAG Assistant — Reliable Knowledge Retrieval
+# RAG Assistant · Evidence Desk
 
-A retrieval-augmented generation (RAG) assistant with **production-grade reliability engineering**: citation verification, grounding checks, confidence scoring, and automatic abstention on low-confidence answers.
+![RAG Assistant — Answers with source citations](docs/screenshots/rag-answer.png)
 
-## ✨ Key Features
+A local document workbench that answers questions with inspectable sources. Import a document, ask a question, then open every quoted passage behind the answer.
 
-| Feature | Description |
-|---------|-------------|
-| 📄 **Document Ingestion** | Upload PDF, Markdown, TXT, or HTML files into a vector knowledge base |
-| 🔎 **Semantic Search** | ChromaDB-powered vector similarity search for relevant document chunks |
-| 📝 **Constrained Generation** | LLM answers are forced to cite sources and admit uncertainty |
-| ✅ **Citation Verification** | Checks whether the answer actually references retrieved chunks |
-| 🔗 **Grounding Check** | Verifies that cited quotes exist in source documents (fuzzy matching) |
-| 📊 **Confidence Scoring** | Weighted aggregate of retrieval, citation, grounding, and self-confidence signals |
-| 🚫 **Automatic Abstention** | System refuses to answer when evidence is insufficient |
-| 📈 **Full Logging** | Every query/response logged as structured JSONL for analysis |
+**Version 1.0 is a ground-up implementation**, with a FastAPI application, a responsive browser interface, an installable CLI, and one transactional SQLite index. It replaces the earlier Streamlit/ChromaDB/Neo4j implementation; the old implementation remains in Git history.
 
-## 🏗️ Architecture
+## Start in two minutes
 
-```
-User Question
-    │
-    ▼
-┌─────────────────┐
-│  Layer 1:       │
-│  Retrieval      │ ─── ChromaDB vector search (top-k cosine similarity)
-└────────┬────────┘
-         │
-    ▼
-┌─────────────────┐
-│  Layer 2:       │
-│  Generation     │ ─── Constrained JSON output with [Source N] citations
-└────────┬────────┘
-         │
-    ▼
-┌─────────────────┐
-│  Layer 3:       │
-│  Reliability    │ ─── Citation check → Grounding → Confidence → Abstention
-└────────┬────────┘
-         │
-    ▼
-┌────────────┐
-│  Answer    │ ─── Grounded answer with scores, OR abstention message
-└────────────┘
-```
-
-## 🚀 Quick Start
-
-### 1. Clone and set up
+Requires Python 3.11 or newer. No API key, model download, Node build, or database server is needed for the default mode.
 
 ```bash
-git clone https://github.com/dyu55/RAG-assistant.git
-cd RAG-assistant
-
-# Create virtual environment
 python3 -m venv .venv
 source .venv/bin/activate
-
-# Install dependencies
-python -m pip install .
-
-# Optional local embedding backend
-python -m pip install ".[local]"
+python -m pip install -e '.[dev]'
+rag-assistant demo
+rag-assistant serve
 ```
 
-### 2. Configure
+Open **http://127.0.0.1:8000**. Ask: **How does Atlas handle a Redis outage?**
+The Atlas example documents are fictional and safe to use in screenshots.
 
 ```bash
-cp .env.example .env
-# Edit .env and add your OpenAI API key
+rag-assistant ingest handbook.pdf notes.md
+rag-assistant ask 'What do the documents say about backup retention?'
+rag-assistant evaluate
+rag-assistant --data-dir /path/to/another-library serve --port 8001
 ```
 
-### 3. Run
+## What it does
+
+- **Document lifecycle:** PDF, Markdown, TXT, and HTML import; overlapping passages with page/character provenance; content deduplication; atomic replacement by filename; deletion and automatic cache invalidation.
+- **Hybrid retrieval:** BM25 keyword ranking, normalized vector similarity, and bounded two-hop traversal through an entity co-occurrence graph. Reciprocal rank fusion combines rankings without confusing ranking scores with relevance. Overlapping passages are deduplicated.
+- **Evidence checks:** structured claims reference retrieved source IDs and exact quoted spans. Invalid citations or insufficient textual overlap cause abstention. Every answer retains its evidence, warnings, retrieval method, index revision, and measured timings.
+- **A complete workbench:** document filters, retrieval modes, source inspection, graph exploration, saved question history, JSON export, and responsive layouts.
+- **Durable state:** SQLite WAL transactions keep document and chunk replacement consistent. A bounded TTL/LRU cache retains full answer evidence and is keyed by index revision and query options.
+
+The offline mode uses **deterministic token-hash vectors and extractive answers**. These vectors are lexical features, not learned semantic embeddings. The graph records co-occurrence, not verified factual or causal relationships. Quote/overlap checks do not prove entailment or factual truth. The displayed relevance is a retrieval signal, not a calibrated probability of correctness.
+
+## Connect a real model
+
+Configuration is read from environment variables. `.env.example` is a reference; the application does not load `.env` automatically.
+
+For a running local Ollama server, set an installed model name:
 
 ```bash
-streamlit run app.py
+export RAG_PROVIDER=ollama
+export RAG_MODEL=your-installed-chat-model
+export RAG_BASE_URL=http://localhost:11434
+rag-assistant serve
 ```
 
-Then open `http://localhost:8501` in your browser.
-
-### 4. Use
-
-1. Enter your OpenAI API key in the sidebar
-2. Upload documents (PDF, MD, TXT, HTML)
-3. Click "Ingest Documents"
-4. Ask questions in the chat interface
-5. Review the reliability report for each answer
-
-## 📁 Project Structure
-
-```
-├── app.py                     # Streamlit entry point
-├── config/settings.py         # Configuration (env vars, constants)
-├── providers/openai_provider.py  # OpenAI API wrapper
-├── ingestion/
-│   ├── loader.py              # Document loading (PDF, MD, TXT, HTML)
-│   ├── chunker.py             # Recursive text chunking with overlap
-│   └── embedder.py            # Embedding generation + ChromaDB storage
-├── core/
-│   ├── models.py              # Shared retrieval and answer data contracts
-│   ├── result.py              # Pipeline result and log serialization
-│   ├── retrieval.py           # Routing and parallel retrieval
-│   ├── cache.py               # Isolated LRU response cache
-│   ├── retriever.py           # Vector similarity search
-│   ├── generator.py           # Constrained answer generation
-│   ├── reliability.py         # ⭐ Citation, grounding, confidence, abstention
-│   └── pipeline.py            # Pipeline orchestrator
-├── evaluation/
-│   └── logger.py              # JSONL query logging
-└── ui/
-    ├── chat_page.py           # Chat interface
-    └── components/
-        └── reliability_panel.py  # Visual reliability scorecard
-```
-
-## ⭐ Reliability Engine (Core Differentiator)
-
-The reliability engine (`core/reliability.py`) runs four independent checks on every generated answer:
-
-### 1. Citation Presence Check
-Verifies the answer includes citations referencing valid retrieved chunks.
-
-### 2. Grounding Verification
-Uses fuzzy string matching (`difflib.SequenceMatcher` + sliding window) to verify that cited quotes actually exist in the source documents. Catches fabricated citations.
-
-### 3. Confidence Scoring
-Weighted aggregate of four signals:
-- **Retrieval quality** (30%): Average similarity score of top-k chunks
-- **Citation coverage** (25%): Are sources properly cited?
-- **Grounding score** (25%): Are citations verified?
-- **Self-confidence** (20%): Model's own uncertainty estimate
-
-### 4. Abstention Logic
-System abstains when:
-- Overall confidence falls below threshold (default: 0.6)
-- Best retrieval score is too low (no relevant documents)
-- Zero citations AND zero grounding (no evidence trail)
-
-## 🛠️ Tech Stack
-
-- **LLM**: OpenAI GPT-4o-mini (configurable)
-- **Embeddings**: OpenAI text-embedding-3-small or local sentence-transformers
-- **Vector Store**: ChromaDB (persistent, local)
-- **UI**: Streamlit
-- **Document Processing**: PyMuPDF (PDF), built-in (MD, TXT, HTML)
-
-## 📊 Logging & Evaluation
-
-Every query is logged to `data/logs/queries.jsonl` with:
-- Timestamp, query, answer, citations
-- Full reliability report (scores, verdict, abstention reason)
-- Per-layer latency (retrieval, generation, reliability check)
-- Model name and configuration
-
-## Development and cache lifecycle
+To use learned embeddings, create a **new index** and import documents again:
 
 ```bash
-python -m pip install -e ".[dev]"
-python -m pytest
-make lint
-make security
+export RAG_DATA_DIR=.rag-semantic
+export RAG_EMBEDDING_PROVIDER=ollama
+export RAG_EMBEDDING_MODEL=your-installed-embedding-model
+export RAG_EMBEDDING_URL=http://localhost:11434
+rag-assistant demo
+rag-assistant serve
+```
+
+OpenAI-compatible services are supported with `RAG_PROVIDER=openai`, `RAG_BASE_URL=https://api.openai.com/v1`, `RAG_MODEL`, and `RAG_API_KEY`. Embeddings have separate `RAG_EMBEDDING_PROVIDER`, `RAG_EMBEDDING_URL`, `RAG_EMBEDDING_MODEL`, and `RAG_EMBEDDING_API_KEY` settings. Remote providers receive the selected text; choose providers appropriate for your documents. JSON-object mode is used for compatibility, followed by local schema validation.
+
+If generation fails, the workbench labels the result as source excerpts. If embeddings fail in hybrid mode, keyword and graph retrieval remain available. Explicit vector mode reports the service failure. Changing embedding identity requires a new data directory so incompatible vectors cannot silently mix.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    A[Browser / CLI] --> B[Application service]
+    B --> C[Document parsing + chunking]
+    C --> D[(SQLite documents / vectors / history)]
+    B --> E[Parallel keyword / vector / graph retrieval]
+    D --> E
+    E --> F[Rank fusion + source selection]
+    F --> G[Extractive or model generation]
+    G --> H[Citation and quotation checks]
+    H --> I[Answer + inspectable evidence]
+```
+
+See [architecture and migration](docs/ARCHITECTURE.md), [validation](docs/VALIDATION.md), and the interactive API reference at `/docs`.
+
+## Develop and deploy
+
+```bash
+pytest --cov=rag_assistant --cov-report=term-missing
+ruff check .
+ruff format --check .
 python -m build
+docker compose up --build
 ```
 
-RRF controls ranking through `chunk.metadata["rrf_score"]`; `chunk.score` remains the original relevance signal used by CRAG and reliability checks. Cache hits retain the full evidence and reliability report and are logged like fresh answers.
+The application is a **single-user local workbench**. It binds to loopback and rejects cross-origin mutations. It has no account system or access control for public hosting; add authentication at a reverse proxy before exposing it. The default index limit is 5,000 chunks, with brute-force vector search intended for personal document collections. Scanned PDFs require OCR before import.
 
-Applications that inject `SemanticCache` into a long-lived `Pipeline` must call `pipeline.invalidate_cache()` after changing documents or pipeline configuration. Cache namespaces isolate pipeline instances and generation/retrieval options. The built-in pipeline uses exact response caching; semantic lookup is available through `SemanticCache.get(..., query_embedding=...)` when a caller supplies an embedding.
-
-The default Docker image uses API embeddings. To include local embedding models, build with `docker build --build-arg INSTALL_LOCAL_EMBEDDINGS=true -t rag-assistant:local .`.
-
-See [the refactoring report](docs/REFACTORING.md) for validation and compatibility details.
-
-## License
-
-MIT
+MIT license. Protocol references: [Ollama chat](https://docs.ollama.com/api/chat), [Ollama embeddings](https://docs.ollama.com/api/embed), [OpenAI structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs).

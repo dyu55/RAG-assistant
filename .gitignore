@@ -1,3 +1,33 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+.env.*
+!.env.example
+.rag-assistant/
+.rag-semantic/
+*.sqlite3*
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+dist/
+build/
+.DS_Store
+.playwright-cli/
+output/
+# Preserve legacy local data without publishing it.
+data/
+logs/
+.idea/
+.vscode/
+
+coverage.json
+
+# Previous local-only exclusions retained during migration.
 # Python
 __pycache__/
 *.py[cod]

@@ -1,2 +1,0 @@
-# Runtime and development dependencies are declared in pyproject.toml.
--e .[dev]

@@ -1,49 +1,10 @@
-# ==============================================================================
-# Multi-stage Dockerfile for RAG Assistant
-# ==============================================================================
-
-FROM python:3.11-slim AS base
-
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    STREAMLIT_SERVER_PORT=8501 \
-    STREAMLIT_SERVER_ADDRESS=0.0.0.0 \
-    STREAMLIT_SERVER_HEADLESS=true
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-# Set working directory
+FROM python:3.12-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 RAG_DATA_DIR=/data
 WORKDIR /app
-
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application source
-COPY . .
-
-# Opt in to local embedding models without enlarging the default image.
-ARG INSTALL_LOCAL_EMBEDDINGS=false
-RUN if [ "$INSTALL_LOCAL_EMBEDDINGS" = "true" ]; then pip install ".[local]"; fi
-
-# Create non-root user for security
-RUN useradd -m -u 1000 appuser && \
-    mkdir -p data/chroma_db data/logs && \
-    chown -R appuser:appuser /app
-
+COPY pyproject.toml README.md LICENSE ./
+COPY src ./src
+RUN pip install --no-cache-dir . && useradd --uid 10001 --create-home appuser && mkdir /data && chown appuser /data
 USER appuser
-
-# Healthcheck to verify Streamlit responsiveness
-HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8501/_stcore/health || exit 1
-
-EXPOSE 8501
-
-ENTRYPOINT ["streamlit", "run", "app.py"]
+EXPOSE 8000
+HEALTHCHECK --interval=10s --timeout=3s --start-period=10s CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2)"
+CMD ["uvicorn", "rag_assistant.api:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]

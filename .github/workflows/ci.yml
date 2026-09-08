@@ -1,131 +1,66 @@
-name: CI Pipeline
-
+name: CI
 on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
-  workflow_dispatch:
-
+permissions:
+  contents: read
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
-
 jobs:
-  # ── 1. Code Quality & Formatting ──────────────────────────────────────────
-  lint:
-    name: Code Quality & Lint (Ruff)
+  quality:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-
-      - name: Install Linting Tools
-        run: |
-          python -m pip install --upgrade pip
-          pip install ruff
-
-      - name: Run Ruff Lint Check
-        run: ruff check .
-
-      - name: Run Ruff Format Check
-        run: ruff format --check .
-
-  # ── 2. Security & Secret Audit ───────────────────────────────────────────
-  security:
-    name: Security & Secret Scan
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-
-      - name: Install Security Tools
-        run: |
-          python -m pip install --upgrade pip
-          pip install bandit
-
-      - name: Run Bandit Security Audit
-        run: |
-          bandit -r core/ graph/ ingestion/ evaluation/ providers/ -ll -q
-
-      - name: Secret Placeholder Hygiene Check
-        run: |
-          # Ensure no real or test keys like 'sk-' or hardcoded credentials exist
-          if grep -rnw . -e "sk-[a-zA-Z0-9]\{20,\}" --exclude-dir={.git,.venv,venv}; then
-            echo "❌ Potential API Key detected!"
-            exit 1
-          fi
-          echo "✅ Secret hygiene verification passed."
-
-  # ── 3. Multi-Python Test Matrix ───────────────────────────────────────────
-  test:
-    name: Test Matrix (Python ${{ matrix.python-version }})
-    needs: [lint, security]
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen --extra dev --python 3.12
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+  tests:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
-
+        python: ['3.11', '3.12', '3.13']
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: "pip"
-
-      - name: Install Dependencies
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen --extra dev --python ${{ matrix.python }}
+      - run: uv run pytest --cov=rag_assistant --cov-report=term-missing --cov-fail-under=85
+      - run: uv run python -m build
+      - name: Install and exercise the wheel outside the source tree
         run: |
-          python -m pip install --upgrade pip
-          pip install ".[dev]"
-
-      - name: Run Test Suite with Coverage
-        run: |
-          pytest --cov=core --cov=graph --cov=ingestion --cov=evaluation --cov=providers \
-                 --cov-report=xml --cov-report=term-missing \
-                 tests/
-
-      - name: Upload Coverage Artifact (Python 3.11)
-        if: matrix.python-version == '3.11'
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage.xml
-
-  # ── 4. CI Status Gate ─────────────────────────────────────────────────────
-  ci-status-gate:
-    name: CI Pipeline Status Gate
-    needs: [lint, security, test]
+          uv venv "$RUNNER_TEMP/installed" --python ${{ matrix.python }}
+          uv pip install --python "$RUNNER_TEMP/installed/bin/python" dist/*.whl
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/installed/bin/rag-assistant" evaluate
+  container:
     runs-on: ubuntu-latest
-    if: always()
     steps:
-      - name: Check Matrix & Job Statuses
+      - uses: actions/checkout@v4
+      - run: docker build -t rag-assistant:test .
+      - name: Verify container startup and query lifecycle
         run: |
-          if [ "${{ needs.lint.result }}" != "success" ]; then
-            echo "❌ Lint job failed"
-            exit 1
-          fi
-          if [ "${{ needs.security.result }}" != "success" ]; then
-            echo "❌ Security job failed"
-            exit 1
-          fi
-          if [ "${{ needs.test.result }}" != "success" ]; then
-            echo "❌ Test matrix job failed"
-            exit 1
-          fi
-          echo "🎉 All CI checks passed successfully!"
+          docker run -d --name rag-test -p 127.0.0.1:8000:8000 rag-assistant:test
+          python - <<'PYTEST'
+          import json, time, urllib.request
+          for attempt in range(30):
+              try:
+                  with urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2) as response:
+                      assert json.load(response)['status'] == 'ok'
+                  break
+              except OSError:
+                  time.sleep(1)
+          else:
+              raise SystemExit('Container did not start')
+          request = urllib.request.Request('http://127.0.0.1:8000/api/demo', data=b'{}', headers={'Content-Type': 'application/json'})
+          with urllib.request.urlopen(request) as response:
+              assert len(json.load(response)) == 4
+          question = json.dumps({'text': 'How does Atlas handle Redis?'}).encode()
+          request = urllib.request.Request('http://127.0.0.1:8000/api/ask', data=question, headers={'Content-Type': 'application/json'})
+          with urllib.request.urlopen(request) as response:
+              assert json.load(response)['status'] == 'supported'
+          PYTEST
+      - if: always()
+        run: docker logs rag-test
