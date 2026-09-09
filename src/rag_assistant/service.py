@@ -89,7 +89,23 @@ class KnowledgeService:
                 self.store.record(answer)
                 return answer
         warnings, vector = [], None
-        if chunks and question.mode in {"hybrid", "vector"}:
+        effective_mode = question.mode
+        if effective_mode == "auto":
+            from .router import route_query
+
+            decision = route_query(question.text)
+            effective_mode = decision.mode
+            warnings.append(
+                f"Adaptive routing selected '{effective_mode}' mode: {decision.reasoning}"
+            )
+
+        effective_question = (
+            question
+            if question.mode == effective_mode
+            else question.model_copy(update={"mode": effective_mode})
+        )
+
+        if chunks and effective_mode in {"hybrid", "vector"}:
             if identity != self.settings.embedding_identity:
                 raise ValueError(
                     "Embedding model differs from the index; select the original model or reimport"
@@ -97,10 +113,10 @@ class KnowledgeService:
             try:
                 vector = self.client.embed([question.text])[0]
             except ProviderError:
-                if question.mode == "vector":
+                if effective_mode == "vector":
                     raise
                 warnings.append("Embedding service unavailable; using keyword and graph retrieval.")
-        evidence = retrieve(question, chunks, vector)
+        evidence = retrieve(effective_question, chunks, vector)
         retrieved = time.perf_counter()
         provider = self.settings.provider
         if not evidence:
@@ -130,7 +146,7 @@ class KnowledgeService:
             status="supported" if supported else "abstained",
             reason=reason,
             provider=provider,
-            retrieval_mode=question.mode,
+            retrieval_mode=effective_mode,
             confidence=round(sum(e.relevance for e in evidence) / len(evidence), 3)
             if supported
             else 0,

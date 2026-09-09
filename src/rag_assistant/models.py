@@ -48,7 +48,7 @@ class Question(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
     top_k: int = Field(default=5, ge=1, le=12)
     document_ids: list[str] = Field(default_factory=list, max_length=100)
-    mode: Literal["hybrid", "keyword", "vector", "graph"] = "hybrid"
+    mode: Literal["hybrid", "keyword", "vector", "graph", "auto"] = "hybrid"
 
     @field_validator("text")
     @classmethod
