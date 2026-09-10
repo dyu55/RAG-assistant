@@ -58,6 +58,14 @@ class Question(BaseModel):
         return value.strip()
 
 
+class TriadMetrics(BaseModel):
+    context_relevance: float = 0.0
+    groundedness: float = 0.0
+    answer_relevance: float = 0.0
+    composite_score: float = 0.0
+    verdict: str = "supported"
+
+
 class Answer(BaseModel):
     id: str
     question: str
@@ -73,3 +81,4 @@ class Answer(BaseModel):
     timings_ms: dict[str, float] = Field(default_factory=dict)
     cached: bool = False
     revision: int
+    evaluation: TriadMetrics | None = None

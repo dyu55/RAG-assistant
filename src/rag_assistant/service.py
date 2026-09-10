@@ -135,12 +135,24 @@ class KnowledgeService:
         generated = time.perf_counter()
         supported, reason = verify(draft, evidence)
         claims = draft.claims if supported else []
+        answer_text = (
+            "\n\n".join(f"{claim.text} [{claim.source_id}]" for claim in claims)
+            if supported
+            else "I could not find enough verified evidence to answer this question."
+        )
+        from .evaluation import evaluate_triad
+
+        evaluation = evaluate_triad(
+            query=question.text,
+            evidence=evidence,
+            answer_text=answer_text,
+            claims=claims,
+            status="supported" if supported else "abstained",
+        )
         answer = Answer(
             id=uuid.uuid4().hex,
             question=question.text,
-            answer="\n\n".join(f"{claim.text} [{claim.source_id}]" for claim in claims)
-            if supported
-            else "I could not find enough verified evidence to answer this question.",
+            answer=answer_text,
             claims=claims,
             evidence=evidence,
             status="supported" if supported else "abstained",
@@ -157,6 +169,7 @@ class KnowledgeService:
                 "generation": round((generated - retrieved) * 1000, 2),
                 "total": round((time.perf_counter() - started) * 1000, 2),
             },
+            evaluation=evaluation,
         )
         with self.lock:
             self.cache[key] = (time.monotonic(), answer.model_copy(deep=True))
