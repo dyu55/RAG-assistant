@@ -88,7 +88,7 @@ class KnowledgeService:
                 self.cache.move_to_end(key)
                 self.store.record(answer)
                 return answer
-        warnings, vector = [], None
+        warnings, corrections, vector = [], [], None
         effective_mode = question.mode
         if effective_mode == "auto":
             from .router import route_query
@@ -133,7 +133,16 @@ class KnowledgeService:
                     "Model service unavailable or returned invalid JSON; showing source excerpts."
                 )
         generated = time.perf_counter()
-        supported, reason = verify(draft, evidence)
+        from .correction import rescue_unsupported_draft
+
+        draft, is_rescued, reason = rescue_unsupported_draft(question.text, draft, evidence, verify)
+        if is_rescued:
+            corrections.append("rescued_unsupported_draft_via_extractive_fallback")
+            warnings.append(
+                "Initial draft failed strict citation verification; safely rescued via extractive synthesis."
+            )
+
+        supported, _ = verify(draft, evidence)
         claims = draft.claims if supported else []
         answer_text = (
             "\n\n".join(f"{claim.text} [{claim.source_id}]" for claim in claims)
@@ -163,6 +172,7 @@ class KnowledgeService:
             if supported
             else 0,
             warnings=warnings,
+            corrections=corrections,
             revision=revision,
             timings_ms={
                 "retrieval": round((retrieved - started) * 1000, 2),

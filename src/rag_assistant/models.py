@@ -78,6 +78,7 @@ class Answer(BaseModel):
     retrieval_mode: str
     confidence: float
     warnings: list[str] = Field(default_factory=list)
+    corrections: list[str] = Field(default_factory=list)
     timings_ms: dict[str, float] = Field(default_factory=dict)
     cached: bool = False
     revision: int
