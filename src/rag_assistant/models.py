@@ -30,6 +30,8 @@ class Evidence(BaseModel):
     fusion_score: float
     channels: list[str]
     path: list[str] = Field(default_factory=list)
+    rerank_score: float = 0.0
+    context_window: str = ""
 
 
 class Claim(BaseModel):

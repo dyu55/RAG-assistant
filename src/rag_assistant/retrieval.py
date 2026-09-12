@@ -88,21 +88,39 @@ def retrieve(question: Question, chunks: list[Chunk], vector: list[float] | None
         vectors = vector_job.result() if vector_job else {}
     available = {"keyword": keywords, "vector": vectors, "graph": graph}
     active = available if question.mode == "hybrid" else {question.mode: available[question.mode]}
+    from .contextual import expand_context_window
+    from .rerank import analyze_query_weights, compute_rerank_score
+
+    weights = analyze_query_weights(question.text)
     fusion: dict[str, float] = defaultdict(float)
     channels: dict[str, list[str]] = defaultdict(list)
     for channel, scores in active.items():
+        channel_weight = weights.get(channel, 1.0) if question.mode == "hybrid" else 1.0
         for rank, (chunk_id, _) in enumerate(
             sorted(scores.items(), key=lambda row: (-row[1], row[0]))[:60], 1
         ):
-            fusion[chunk_id] += 1 / (60 + rank)
+            fusion[chunk_id] += channel_weight / (60 + rank)
             channels[chunk_id].append(channel)
     lookup = {chunk.id: chunk for chunk in chunks}
-    query_terms = set(tokens(question.text))
-    selected = []
-    for chunk_id, score in sorted(fusion.items(), key=lambda row: (-row[1], row[0])):
+
+    # Candidate pooling & cross-feature reranking
+    candidates = []
+    for chunk_id, score in sorted(fusion.items(), key=lambda row: (-row[1], row[0]))[:60]:
         chunk = lookup[chunk_id]
-        coverage = len(query_terms & set(tokens(chunk.text))) / max(1, len(query_terms))
-        relevance = min(1.0, max(coverage, vectors.get(chunk_id, 0)))
+        rerank_val = compute_rerank_score(
+            question.text,
+            chunk,
+            vector_score=vectors.get(chunk_id, 0.0),
+            graph_score=graph.get(chunk_id, 0.0),
+            path=paths.get(chunk_id, []),
+        )
+        candidates.append((chunk, rerank_val, score, chunk_id))
+
+    # Prioritize candidates by rerank score, breaking ties by reciprocal rank fusion score
+    candidates.sort(key=lambda item: (-item[1], -item[2]))
+
+    selected = []
+    for chunk, relevance, score, chunk_id in candidates:
         if relevance < 0.12 and not graph.get(chunk_id):
             continue
         # Overlapping windows are useful for indexing, but should not crowd out other sources.
@@ -114,6 +132,7 @@ def retrieve(question: Question, chunks: list[Chunk], vector: list[float] | None
             for item in selected
         ):
             continue
+        context_win = expand_context_window(chunks, chunk)
         selected.append(
             Evidence(
                 source_id=f"S{len(selected) + 1}",
@@ -125,9 +144,11 @@ def retrieve(question: Question, chunks: list[Chunk], vector: list[float] | None
                 start=chunk.start,
                 end=chunk.end,
                 relevance=round(relevance, 4),
+                rerank_score=round(relevance, 4),
                 fusion_score=round(score, 6),
                 channels=channels[chunk_id],
                 path=paths.get(chunk_id, []),
+                context_window=context_win,
             )
         )
         if len(selected) == question.top_k:
