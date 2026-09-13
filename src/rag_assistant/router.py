@@ -55,7 +55,17 @@ class AdaptiveRouter:
 
         lower_q = clean_q.lower()
 
-        # 1. Relational intent -> Knowledge Graph
+        # 1. Global / Thematic intent -> Knowledge Graph Communities
+        from .community import is_global_query
+
+        if is_global_query(lower_q):
+            return RouteDecision(
+                mode="graph",
+                confidence=0.92,
+                reasoning="Query seeks global panoramic overview across knowledge graph communities.",
+            )
+
+        # 2. Relational intent -> Knowledge Graph
         for pat in self.RELATIONAL_PATTERNS:
             if re.search(pat, lower_q):
                 return RouteDecision(

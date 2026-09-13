@@ -60,6 +60,16 @@ class Question(BaseModel):
         return value.strip()
 
 
+class CommunityReport(BaseModel):
+    id: str
+    title: str
+    hub_entities: list[str]
+    entities: list[str]
+    chunk_ids: list[str]
+    summary: str
+    weight: int = 1
+
+
 class TriadMetrics(BaseModel):
     context_relevance: float = 0.0
     groundedness: float = 0.0

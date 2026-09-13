@@ -79,6 +79,13 @@ def graph_scores(query: str, chunks: list[Chunk], max_hops: int = 2):
 def retrieve(question: Question, chunks: list[Chunk], vector: list[float] | None) -> list[Evidence]:
     if not chunks:
         return []
+    from .community import global_community_retrieve, is_global_query
+
+    if question.mode == "graph" and is_global_query(question.text):
+        comm_evidence = global_community_retrieve(question, chunks)
+        if comm_evidence:
+            return comm_evidence
+
     with ThreadPoolExecutor(max_workers=3) as executor:
         keyword_job = executor.submit(keyword_scores, question.text, chunks)
         graph_job = executor.submit(graph_scores, question.text, chunks)
@@ -172,8 +179,12 @@ def graph_view(chunks: list[Chunk]) -> dict:
                     "relation": "co-occurs",
                 }
             )
+    from .community import detect_communities
+
+    communities = detect_communities(chunks)
     return {
         "nodes": [{"id": entity, "count": len(members[entity])} for entity in top],
         "edges": sorted(edges, key=lambda edge: -edge["weight"])[:90],
+        "communities": [c.model_dump() for c in communities],
         "description": "Entities that appear in the same passage. Connections are associations, not proven causal relationships.",
     }

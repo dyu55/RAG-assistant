@@ -109,6 +109,13 @@ def create_app(
         _, _, chunks = service.store.snapshot()
         return graph_view(chunks)
 
+    @app.get("/api/graph/communities")
+    def graph_communities():
+        from .community import detect_communities
+
+        _, _, chunks = service.store.snapshot()
+        return [c.model_dump() for c in detect_communities(chunks)]
+
     static = Path(__file__).parent / "static"
     app.mount("/static", StaticFiles(directory=static), name="static")
 
