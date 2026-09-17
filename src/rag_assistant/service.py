@@ -37,6 +37,14 @@ class KnowledgeService:
         self.settings = settings
         self.store = Store(settings.data_dir)
         self.client = client or ModelClient(settings)
+        from .cache import SemanticCache
+
+        self.semantic_cache = SemanticCache(
+            ttl=settings.cache_ttl,
+            threshold=settings.semantic_cache_threshold,
+            max_entries=settings.semantic_cache_max_entries,
+            enabled=settings.semantic_cache_enabled,
+        )
         self.cache: OrderedDict[str, tuple[float, Answer]] = OrderedDict()
         self.lock = threading.RLock()
 
@@ -79,6 +87,17 @@ class KnowledgeService:
             ],
             sort_keys=True,
         )
+        cached_exact = self.semantic_cache.get_exact(
+            question=question,
+            revision=revision,
+            provider=self.settings.provider,
+            model=self.settings.model,
+        )
+        if cached_exact is not None:
+            cached_exact.timings_ms = {"total": round((time.perf_counter() - started) * 1000, 2)}
+            self.store.record(cached_exact)
+            return cached_exact
+
         with self.lock:
             cached = self.cache.get(key)
             if cached and time.monotonic() - cached[0] < self.settings.cache_ttl:
@@ -112,6 +131,21 @@ class KnowledgeService:
                 )
             try:
                 vector = self.client.embed([question.text])[0]
+                if self.settings.semantic_cache_enabled:
+                    cached_semantic = self.semantic_cache.get_semantic(
+                        question=effective_question,
+                        revision=revision,
+                        provider=self.settings.provider,
+                        model=self.settings.model,
+                        vector=vector,
+                        threshold=self.settings.semantic_cache_threshold,
+                    )
+                    if cached_semantic is not None:
+                        cached_semantic.timings_ms = {
+                            "total": round((time.perf_counter() - started) * 1000, 2)
+                        }
+                        self.store.record(cached_semantic)
+                        return cached_semantic
             except ProviderError:
                 if effective_mode == "vector":
                     raise
@@ -180,6 +214,14 @@ class KnowledgeService:
                 "total": round((time.perf_counter() - started) * 1000, 2),
             },
             evaluation=evaluation,
+        )
+        self.semantic_cache.put(
+            question=effective_question,
+            revision=revision,
+            provider=provider,
+            model=self.settings.model,
+            answer=answer,
+            vector=vector,
         )
         with self.lock:
             self.cache[key] = (time.monotonic(), answer.model_copy(deep=True))

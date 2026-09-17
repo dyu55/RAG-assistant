@@ -23,6 +23,9 @@ class Settings(BaseModel):
     max_chunks: int = Field(default=5000, ge=1)
     request_timeout: float = Field(default=60, gt=0, le=300)
     cache_ttl: float = Field(default=300, ge=0)
+    semantic_cache_enabled: bool = Field(default=True)
+    semantic_cache_threshold: float = Field(default=0.92, ge=0.5, le=1.0)
+    semantic_cache_max_entries: int = Field(default=500, ge=10, le=10000)
 
     @model_validator(mode="after")
     def validate_configuration(self):

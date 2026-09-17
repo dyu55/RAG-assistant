@@ -116,6 +116,17 @@ def create_app(
         _, _, chunks = service.store.snapshot()
         return [c.model_dump() for c in detect_communities(chunks)]
 
+    @app.get("/api/cache/stats")
+    def cache_stats():
+        return service.semantic_cache.stats()
+
+    @app.post("/api/cache/clear")
+    def cache_clear():
+        service.semantic_cache.clear()
+        with service.lock:
+            service.cache.clear()
+        return {"status": "cleared"}
+
     static = Path(__file__).parent / "static"
     app.mount("/static", StaticFiles(directory=static), name="static")
 
