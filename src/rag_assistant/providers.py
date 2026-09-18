@@ -117,7 +117,10 @@ class ModelClient:
                 "content": json.dumps(
                     {
                         "question": question,
-                        "evidence": [{"source_id": e.source_id, "text": e.text} for e in evidence],
+                        "evidence": [
+                            {"source_id": e.source_id, "text": e.compressed_text or e.text}
+                            for e in evidence
+                        ],
                     },
                     ensure_ascii=False,
                 ),

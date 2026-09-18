@@ -26,6 +26,8 @@ class Settings(BaseModel):
     semantic_cache_enabled: bool = Field(default=True)
     semantic_cache_threshold: float = Field(default=0.92, ge=0.5, le=1.0)
     semantic_cache_max_entries: int = Field(default=500, ge=10, le=10000)
+    context_compression_enabled: bool = Field(default=True)
+    context_compression_ratio: float = Field(default=0.65, ge=0.1, le=1.0)
 
     @model_validator(mode="after")
     def validate_configuration(self):

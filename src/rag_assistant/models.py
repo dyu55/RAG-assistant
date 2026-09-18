@@ -32,6 +32,8 @@ class Evidence(BaseModel):
     path: list[str] = Field(default_factory=list)
     rerank_score: float = 0.0
     context_window: str = ""
+    compressed_text: str = ""
+    compression_ratio: float = 1.0
 
 
 class Claim(BaseModel):
@@ -95,3 +97,4 @@ class Answer(BaseModel):
     cached: bool = False
     revision: int
     evaluation: TriadMetrics | None = None
+    compression_ratio: float | None = None

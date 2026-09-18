@@ -152,6 +152,15 @@ class KnowledgeService:
                 warnings.append("Embedding service unavailable; using keyword and graph retrieval.")
         evidence = retrieve(effective_question, chunks, vector)
         retrieved = time.perf_counter()
+        from .compression import compress_evidence_set
+
+        evidence, compression_ratio = compress_evidence_set(
+            evidence,
+            question.text,
+            target_ratio=self.settings.context_compression_ratio,
+            enabled=self.settings.context_compression_enabled,
+        )
+        compressed = time.perf_counter()
         provider = self.settings.provider
         if not evidence:
             draft = Draft(claims=[])
@@ -210,10 +219,12 @@ class KnowledgeService:
             revision=revision,
             timings_ms={
                 "retrieval": round((retrieved - started) * 1000, 2),
-                "generation": round((generated - retrieved) * 1000, 2),
+                "compression": round((compressed - retrieved) * 1000, 2),
+                "generation": round((generated - compressed) * 1000, 2),
                 "total": round((time.perf_counter() - started) * 1000, 2),
             },
             evaluation=evaluation,
+            compression_ratio=compression_ratio,
         )
         self.semantic_cache.put(
             question=effective_question,
