@@ -124,6 +124,7 @@ class KnowledgeService:
             else question.model_copy(update={"mode": effective_mode})
         )
 
+        expansion_terms = []
         if chunks and effective_mode in {"hybrid", "vector"}:
             if identity != self.settings.embedding_identity:
                 raise ValueError(
@@ -131,6 +132,18 @@ class KnowledgeService:
                 )
             try:
                 vector = self.client.embed([question.text])[0]
+                if self.settings.hyde_enabled:
+                    from .hyde import blend_vectors, extract_pseudo_relevance_terms
+
+                    try:
+                        hyde_doc = self.client.generate_hypothetical_document(question.text)
+                        expansion_terms = extract_pseudo_relevance_terms(hyde_doc, question.text)
+                        hyde_vecs = self.client.embed([hyde_doc])
+                        if hyde_vecs:
+                            vector = blend_vectors(vector, hyde_vecs[0], self.settings.hyde_weight)
+                    except Exception:
+                        pass
+
                 if self.settings.semantic_cache_enabled:
                     cached_semantic = self.semantic_cache.get_semantic(
                         question=effective_question,
@@ -150,7 +163,16 @@ class KnowledgeService:
                 if effective_mode == "vector":
                     raise
                 warnings.append("Embedding service unavailable; using keyword and graph retrieval.")
-        evidence = retrieve(effective_question, chunks, vector)
+        elif chunks and self.settings.hyde_enabled:
+            from .hyde import extract_pseudo_relevance_terms
+
+            try:
+                hyde_doc = self.client.generate_hypothetical_document(question.text)
+                expansion_terms = extract_pseudo_relevance_terms(hyde_doc, question.text)
+            except Exception:
+                pass
+
+        evidence = retrieve(effective_question, chunks, vector, expansion_terms=expansion_terms)
         retrieved = time.perf_counter()
         from .compression import compress_evidence_set
 

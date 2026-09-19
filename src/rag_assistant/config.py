@@ -28,6 +28,8 @@ class Settings(BaseModel):
     semantic_cache_max_entries: int = Field(default=500, ge=10, le=10000)
     context_compression_enabled: bool = Field(default=True)
     context_compression_ratio: float = Field(default=0.65, ge=0.1, le=1.0)
+    hyde_enabled: bool = Field(default=True)
+    hyde_weight: float = Field(default=0.4, ge=0.0, le=1.0)
 
     @model_validator(mode="after")
     def validate_configuration(self):

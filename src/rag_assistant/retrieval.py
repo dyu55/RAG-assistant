@@ -9,12 +9,16 @@ from .models import Chunk, Evidence, Question
 from .text import tokens
 
 
-def keyword_scores(query: str, chunks: list[Chunk]) -> dict[str, float]:
+def keyword_scores(
+    query: str, chunks: list[Chunk], expansion_terms: list[str] | None = None
+) -> dict[str, float]:
     counts = [Counter(tokens(chunk.text)) for chunk in chunks]
     lengths = [sum(count.values()) for count in counts]
     average = sum(lengths) / max(1, len(lengths)) or 1
     query_tokens = set(tokens(query))
-    frequency = Counter(term for count in counts for term in query_tokens if term in count)
+    exp_tokens = set(expansion_terms or []) - query_tokens
+    all_tokens = query_tokens | exp_tokens
+    frequency = Counter(term for count in counts for term in all_tokens if term in count)
     result = {}
     for chunk, count, length in zip(chunks, counts, lengths, strict=True):
         score = 0.0
@@ -23,6 +27,11 @@ def keyword_scores(query: str, chunks: list[Chunk]) -> dict[str, float]:
             if tf:
                 idf = math.log(1 + (len(chunks) - frequency[term] + 0.5) / (frequency[term] + 0.5))
                 score += idf * tf * 2.5 / (tf + 1.5 * (0.25 + 0.75 * length / average))
+        for term in exp_tokens:
+            tf = count[term]
+            if tf:
+                idf = math.log(1 + (len(chunks) - frequency[term] + 0.5) / (frequency[term] + 0.5))
+                score += 0.25 * (idf * tf * 2.5 / (tf + 1.5 * (0.25 + 0.75 * length / average)))
         if score > 0:
             result[chunk.id] = score
     return result
@@ -76,7 +85,12 @@ def graph_scores(query: str, chunks: list[Chunk], max_hops: int = 2):
     return scores, paths
 
 
-def retrieve(question: Question, chunks: list[Chunk], vector: list[float] | None) -> list[Evidence]:
+def retrieve(
+    question: Question,
+    chunks: list[Chunk],
+    vector: list[float] | None,
+    expansion_terms: list[str] | None = None,
+) -> list[Evidence]:
     if not chunks:
         return []
     from .community import global_community_retrieve, is_global_query
@@ -87,7 +101,7 @@ def retrieve(question: Question, chunks: list[Chunk], vector: list[float] | None
             return comm_evidence
 
     with ThreadPoolExecutor(max_workers=3) as executor:
-        keyword_job = executor.submit(keyword_scores, question.text, chunks)
+        keyword_job = executor.submit(keyword_scores, question.text, chunks, expansion_terms)
         graph_job = executor.submit(graph_scores, question.text, chunks)
         vector_job = executor.submit(vector_scores, vector, chunks) if vector is not None else None
         keywords = keyword_job.result()

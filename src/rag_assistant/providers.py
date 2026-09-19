@@ -101,6 +101,48 @@ class ModelClient:
             raise ProviderError("Embedding dimensions are inconsistent")
         return result
 
+    def generate_hypothetical_document(self, question: str) -> str:
+        s = self.settings
+        if s.provider == "offline":
+            from .hyde import synthesize_hypothetical_document
+
+            return synthesize_hypothetical_document(question)
+
+        prompt = (
+            f"Write a short, factual, declarative paragraph that directly answers this question: '{question}'. "
+            "Do not include conversational filler, disclaimers, or introductory phrases."
+        )
+        messages = [{"role": "user", "content": prompt}]
+        try:
+            if s.provider == "ollama":
+                data = self._post(
+                    s.base_url.rstrip("/") + "/api/chat",
+                    {
+                        "model": s.model,
+                        "messages": messages,
+                        "stream": False,
+                        "options": {"temperature": 0.2},
+                    },
+                    s.api_key,
+                )
+                msg = data.get("message", {})
+                content = msg.get("content", "").strip()
+            else:
+                data = self._post(
+                    s.base_url.rstrip("/") + "/chat/completions",
+                    {"model": s.model, "messages": messages, "stream": False, "temperature": 0.2},
+                    s.api_key,
+                )
+                content = data["choices"][0]["message"]["content"].strip()
+            if content:
+                return content
+        except Exception:
+            pass
+
+        from .hyde import synthesize_hypothetical_document
+
+        return synthesize_hypothetical_document(question)
+
     def generate(self, question: str, evidence: list[Evidence]) -> Draft:
         s = self.settings
         system = (
