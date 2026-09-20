@@ -174,6 +174,12 @@ class KnowledgeService:
 
         evidence = retrieve(effective_question, chunks, vector, expansion_terms=expansion_terms)
         retrieved = time.perf_counter()
+        if chunks:
+            from .hierarchical import build_parent_chunks, rollup_to_parent_context
+
+            parents, child_to_parent = build_parent_chunks(chunks)
+            evidence = rollup_to_parent_context(evidence, parents, child_to_parent)
+
         from .compression import compress_evidence_set
 
         evidence, compression_ratio = compress_evidence_set(
