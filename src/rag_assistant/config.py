@@ -30,6 +30,10 @@ class Settings(BaseModel):
     context_compression_ratio: float = Field(default=0.65, ge=0.1, le=1.0)
     hyde_enabled: bool = Field(default=True)
     hyde_weight: float = Field(default=0.4, ge=0.0, le=1.0)
+    crag_enabled: bool = Field(default=True)
+    crag_upper_threshold: float = Field(default=0.60, ge=0.1, le=1.0)
+    crag_lower_threshold: float = Field(default=0.25, ge=0.0, le=1.0)
+    attention_reordering_enabled: bool = Field(default=True)
 
     @model_validator(mode="after")
     def validate_configuration(self):

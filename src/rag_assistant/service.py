@@ -189,6 +189,41 @@ class KnowledgeService:
             enabled=self.settings.context_compression_enabled,
         )
         compressed = time.perf_counter()
+
+        # CRAG (Corrective RAG) Retrieval Evaluation & Dynamic Refinement
+        if self.settings.crag_enabled and chunks:
+            from .crag import evaluate_retrieval, refine_knowledge_strips
+
+            crag_eval = evaluate_retrieval(
+                question.text,
+                evidence,
+                upper_threshold=self.settings.crag_upper_threshold,
+                lower_threshold=self.settings.crag_lower_threshold,
+            )
+            if crag_eval.action == "incorrect" and crag_eval.fallback_query:
+                corrections.append("crag_low_confidence_fallback_retrieval")
+                fallback_q = effective_question.model_copy(
+                    update={"text": crag_eval.fallback_query}
+                )
+                fallback_evidence = retrieve(
+                    fallback_q, chunks, vector, expansion_terms=expansion_terms
+                )
+                if fallback_evidence and max(
+                    (e.relevance for e in fallback_evidence), default=0.0
+                ) > max((e.relevance for e in evidence), default=0.0):
+                    evidence = fallback_evidence
+                    warnings.append(f"CRAG triggered fallback query: '{crag_eval.fallback_query}'")
+            elif crag_eval.action in {"correct", "ambiguous"} and evidence:
+                evidence = refine_knowledge_strips(evidence, question.text)
+                if crag_eval.action == "ambiguous":
+                    warnings.append(f"CRAG flagged ambiguous retrieval: {crag_eval.reasoning}")
+
+        # Attention-Aware Reordering (Lost-in-the-Middle Mitigation)
+        if self.settings.attention_reordering_enabled and evidence:
+            from .reorder import reorder_lost_in_the_middle
+
+            evidence = reorder_lost_in_the_middle(evidence)
+
         provider = self.settings.provider
         if not evidence:
             draft = Draft(claims=[])
