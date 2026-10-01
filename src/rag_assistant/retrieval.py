@@ -51,21 +51,30 @@ def vector_scores(vector: list[float], chunks: list[Chunk]) -> dict[str, float]:
 
 
 def graph_index(chunks: list[Chunk]):
+    from .resolution import EntityResolver
+
+    resolver = EntityResolver.from_chunks(chunks)
     members: dict[str, set[str]] = defaultdict(set)
     neighbors: dict[str, set[str]] = defaultdict(set)
     for chunk in chunks:
-        for entity in chunk.entities:
+        canonical_entities = resolver.canonicalize(chunk.entities)
+        for entity in canonical_entities:
             members[entity].add(chunk.id)
-        for left, right in combinations(chunk.entities, 2):
+        for left, right in combinations(canonical_entities, 2):
             neighbors[left].add(right)
             neighbors[right].add(left)
     return members, neighbors
 
 
 def graph_scores(query: str, chunks: list[Chunk], max_hops: int = 2):
+    from .resolution import EntityResolver
+
+    resolver = EntityResolver.from_chunks(chunks)
     members, neighbors = graph_index(chunks)
     query_terms = set(tokens(query))
-    seeds = sorted(entity for entity in members if set(tokens(entity)) <= query_terms)[:12]
+    seeds = resolver.resolve_query_seeds(query_terms, set(members.keys()))
+    if not seeds:
+        seeds = sorted(entity for entity in members if set(tokens(entity)) <= query_terms)[:12]
     scores, paths = {}, {}
     queue = deque((seed, [seed]) for seed in seeds)
     visited = set(seeds)

@@ -12,12 +12,15 @@ def build_entity_graph(
     chunks: list[Chunk],
 ) -> tuple[dict[str, set[str]], dict[str, dict[str, int]], dict[str, Chunk]]:
     """Build entity-to-chunks map, entity-entity weighted co-occurrence graph, and chunk lookup."""
+    from .resolution import EntityResolver
+
+    resolver = EntityResolver.from_chunks(chunks)
     entity_to_chunks: dict[str, set[str]] = defaultdict(set)
     neighbors: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     chunk_lookup: dict[str, Chunk] = {c.id: c for c in chunks}
 
     for chunk in chunks:
-        norm_entities = sorted({e.strip().lower() for e in chunk.entities if len(e.strip()) > 1})
+        norm_entities = resolver.canonicalize(chunk.entities)
         for entity in norm_entities:
             entity_to_chunks[entity].add(chunk.id)
         for left, right in combinations(norm_entities, 2):
