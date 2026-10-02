@@ -172,7 +172,14 @@ class KnowledgeService:
             except Exception:
                 pass
 
-        evidence = retrieve(effective_question, chunks, vector, expansion_terms=expansion_terms)
+        evidence = retrieve(
+            effective_question,
+            chunks,
+            vector,
+            expansion_terms=expansion_terms,
+            graph_algorithm=self.settings.graph_algorithm,
+            ppr_damping=self.settings.ppr_damping,
+        )
         retrieved = time.perf_counter()
         if chunks:
             from .hierarchical import build_parent_chunks, rollup_to_parent_context
@@ -206,7 +213,12 @@ class KnowledgeService:
                     update={"text": crag_eval.fallback_query}
                 )
                 fallback_evidence = retrieve(
-                    fallback_q, chunks, vector, expansion_terms=expansion_terms
+                    fallback_q,
+                    chunks,
+                    vector,
+                    expansion_terms=expansion_terms,
+                    graph_algorithm=self.settings.graph_algorithm,
+                    ppr_damping=self.settings.ppr_damping,
                 )
                 if fallback_evidence and max(
                     (e.relevance for e in fallback_evidence), default=0.0

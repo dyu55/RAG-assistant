@@ -66,10 +66,21 @@ def graph_index(chunks: list[Chunk]):
     return members, neighbors
 
 
-def graph_scores(query: str, chunks: list[Chunk], max_hops: int = 2):
+def graph_scores(
+    query: str,
+    chunks: list[Chunk],
+    max_hops: int = 2,
+    algorithm: str = "bfs",
+    ppr_damping: float = 0.85,
+):
     from .resolution import EntityResolver
 
     resolver = EntityResolver.from_chunks(chunks)
+    if algorithm == "ppr":
+        from .hipporag import hipporag_graph_scores
+
+        return hipporag_graph_scores(query, chunks, damping=ppr_damping, resolver=resolver)
+
     members, neighbors = graph_index(chunks)
     query_terms = set(tokens(query))
     seeds = resolver.resolve_query_seeds(query_terms, set(members.keys()))
@@ -99,6 +110,8 @@ def retrieve(
     chunks: list[Chunk],
     vector: list[float] | None,
     expansion_terms: list[str] | None = None,
+    graph_algorithm: str = "bfs",
+    ppr_damping: float = 0.85,
 ) -> list[Evidence]:
     if not chunks:
         return []
@@ -111,7 +124,9 @@ def retrieve(
 
     with ThreadPoolExecutor(max_workers=3) as executor:
         keyword_job = executor.submit(keyword_scores, question.text, chunks, expansion_terms)
-        graph_job = executor.submit(graph_scores, question.text, chunks)
+        graph_job = executor.submit(
+            graph_scores, question.text, chunks, 2, graph_algorithm, ppr_damping
+        )
         vector_job = executor.submit(vector_scores, vector, chunks) if vector is not None else None
         keywords = keyword_job.result()
         graph, paths = graph_job.result()
