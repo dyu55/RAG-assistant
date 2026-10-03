@@ -36,6 +36,7 @@ class Settings(BaseModel):
     attention_reordering_enabled: bool = Field(default=True)
     graph_algorithm: Literal["bfs", "ppr"] = Field(default="bfs")
     ppr_damping: float = Field(default=0.85, ge=0.1, le=0.99)
+    self_rag_enabled: bool = Field(default=True)
 
     @model_validator(mode="after")
     def validate_configuration(self):

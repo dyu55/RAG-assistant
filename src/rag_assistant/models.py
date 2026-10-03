@@ -80,6 +80,15 @@ class TriadMetrics(BaseModel):
     verdict: str = "supported"
 
 
+class ReflectionReport(BaseModel):
+    retrieve_decision: str = "[Retrieve]"
+    passage_relevance: dict[str, str] = Field(default_factory=dict)
+    claim_support: list[dict[str, str]] = Field(default_factory=list)
+    utility_score: int = 5
+    verdict: str = "supported"
+    healed: bool = False
+
+
 class Answer(BaseModel):
     id: str
     question: str
@@ -98,3 +107,4 @@ class Answer(BaseModel):
     revision: int
     evaluation: TriadMetrics | None = None
     compression_ratio: float | None = None
+    reflection: ReflectionReport | None = None

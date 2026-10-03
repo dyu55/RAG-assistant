@@ -260,6 +260,21 @@ class KnowledgeService:
                 "Initial draft failed strict citation verification; safely rescued via extractive synthesis."
             )
 
+        # Self-RAG Reflection Critique & Closed-Loop Healing
+        reflection = None
+        if self.settings.self_rag_enabled and draft.claims:
+            from .self_rag import execute_self_reflection
+
+            supported_pre, _ = verify(draft, evidence)
+            reflection, draft, was_healed = execute_self_reflection(
+                question.text, evidence, draft, "supported" if supported_pre else "abstained"
+            )
+            if was_healed:
+                corrections.append("self_rag_pruned_unsupported_claim")
+                warnings.append(
+                    "Self-RAG critic pruned unverified claims while preserving grounded evidence."
+                )
+
         supported, _ = verify(draft, evidence)
         claims = draft.claims if supported else []
         answer_text = (
@@ -300,6 +315,7 @@ class KnowledgeService:
             },
             evaluation=evaluation,
             compression_ratio=compression_ratio,
+            reflection=reflection,
         )
         self.semantic_cache.put(
             question=effective_question,
