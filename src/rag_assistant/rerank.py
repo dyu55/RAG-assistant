@@ -139,16 +139,28 @@ def compute_rerank_score(
     vector_score: float = 0.0,
     graph_score: float = 0.0,
     path: list[str] | None = None,
+    use_late_interaction: bool = True,
 ) -> float:
-    """Cross-feature semantic reranking score combining lexical coverage, phrase matching,
+    """Cross-feature semantic reranking score combining lexical coverage, Late Interaction MaxSim,
 
-    term proximity, entity alignment, and dense vector similarity.
+    phrase matching, term proximity, entity alignment, and dense vector similarity.
     """
     q_tokens = set(tokens(query))
     c_tokens = set(tokens(chunk.text))
     lexical_coverage = len(q_tokens & c_tokens) / max(1, len(q_tokens))
 
-    if lexical_coverage == 0.0 and vector_score <= 0.0 and graph_score <= 0.0:
+    maxsim_score = 0.0
+    if use_late_interaction and (lexical_coverage > 0 or vector_score > 0 or graph_score > 0):
+        from .late_interaction import late_interaction_score
+
+        maxsim_score = late_interaction_score(query, chunk)
+
+    if (
+        lexical_coverage == 0.0
+        and vector_score <= 0.0
+        and graph_score <= 0.0
+        and maxsim_score <= 0.0
+    ):
         return 0.0
 
     phrase_score = score_phrase_match(query, chunk.text)
@@ -158,18 +170,20 @@ def compute_rerank_score(
     v_score = min(1.0, max(0.0, vector_score))
     if v_score > 0.0:
         score = (
-            0.25 * lexical_coverage
-            + 0.25 * v_score
-            + 0.20 * phrase_score
+            0.20 * lexical_coverage
+            + 0.20 * v_score
+            + 0.20 * maxsim_score
+            + 0.15 * phrase_score
             + 0.15 * proximity_score
-            + 0.15 * entity_score
+            + 0.10 * entity_score
         )
     else:
         score = (
-            0.35 * lexical_coverage
-            + 0.25 * phrase_score
-            + 0.20 * proximity_score
-            + 0.20 * entity_score
+            0.25 * lexical_coverage
+            + 0.25 * maxsim_score
+            + 0.20 * phrase_score
+            + 0.15 * proximity_score
+            + 0.15 * entity_score
         )
 
     # Graph hop bonus if reachable
