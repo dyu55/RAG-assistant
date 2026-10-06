@@ -237,8 +237,39 @@ class KnowledgeService:
             evidence = reorder_lost_in_the_middle(evidence)
 
         provider = self.settings.provider
+        speculative_report = None
         if not evidence:
             draft = Draft(claims=[])
+        elif self.settings.speculative_rag_enabled and evidence:
+            from .speculative import execute_speculative_rag
+
+            def drafter_func(q_text: str, ev_subset: list[Evidence]) -> Draft:
+                nonlocal provider
+                if provider == "offline":
+                    return extractive_draft(q_text, ev_subset)
+                try:
+                    return self.client.generate(q_text, ev_subset)
+                except ProviderError:
+                    if provider != "extractive-fallback":
+                        provider = "extractive-fallback"
+                        warnings.append(
+                            "Model service unavailable or returned invalid JSON; showing source excerpts."
+                        )
+                    return extractive_draft(q_text, ev_subset)
+
+            speculative_report, draft = execute_speculative_rag(
+                query=question.text,
+                evidence=evidence,
+                drafter_fn=drafter_func,
+                max_subsets=self.settings.speculative_max_subsets,
+            )
+            if speculative_report.selection_strategy == "consensus_synthesis":
+                corrections.append("speculative_rag_consensus_synthesis")
+                warnings.append(
+                    "Speculative RAG synthesized consensus claims across diverse evidence subsets."
+                )
+            elif speculative_report.selection_strategy == "best_candidate":
+                corrections.append("speculative_rag_best_candidate_selection")
         elif provider == "offline":
             draft = extractive_draft(question.text, evidence)
         else:
@@ -316,6 +347,7 @@ class KnowledgeService:
             evaluation=evaluation,
             compression_ratio=compression_ratio,
             reflection=reflection,
+            speculative=speculative_report,
         )
         self.semantic_cache.put(
             question=effective_question,

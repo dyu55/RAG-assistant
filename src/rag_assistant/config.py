@@ -37,6 +37,8 @@ class Settings(BaseModel):
     graph_algorithm: Literal["bfs", "ppr"] = Field(default="bfs")
     ppr_damping: float = Field(default=0.85, ge=0.1, le=0.99)
     self_rag_enabled: bool = Field(default=True)
+    speculative_rag_enabled: bool = Field(default=True)
+    speculative_max_subsets: int = Field(default=3, ge=2, le=5)
 
     @model_validator(mode="after")
     def validate_configuration(self):

@@ -89,6 +89,28 @@ class ReflectionReport(BaseModel):
     healed: bool = False
 
 
+class SpeculativeDraftCandidate(BaseModel):
+    index: int
+    source_ids: list[str]
+    claim_count: int
+    groundedness: float
+    query_alignment: float
+    consensus_score: float
+    total_score: float
+    summary: str = ""
+
+
+class SpeculativeReport(BaseModel):
+    enabled: bool = True
+    num_subsets: int = 1
+    subsets: list[list[str]] = Field(default_factory=list)
+    drafts: list[SpeculativeDraftCandidate] = Field(default_factory=list)
+    selected_index: int = 0
+    selection_strategy: str = "best_candidate"
+    consensus_score: float = 0.0
+    rationale: str = ""
+
+
 class Answer(BaseModel):
     id: str
     question: str
@@ -108,3 +130,4 @@ class Answer(BaseModel):
     evaluation: TriadMetrics | None = None
     compression_ratio: float | None = None
     reflection: ReflectionReport | None = None
+    speculative: SpeculativeReport | None = None
