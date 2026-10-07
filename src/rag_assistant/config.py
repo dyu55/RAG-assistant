@@ -39,6 +39,10 @@ class Settings(BaseModel):
     self_rag_enabled: bool = Field(default=True)
     speculative_rag_enabled: bool = Field(default=True)
     speculative_max_subsets: int = Field(default=3, ge=2, le=5)
+    mrl_enabled: bool = Field(default=True)
+    mrl_coarse_dim: int = Field(default=64, ge=16, le=512)
+    mrl_candidate_pool: int = Field(default=60, ge=10, le=500)
+    mrl_blend_alpha: float = Field(default=0.90, ge=0.5, le=1.0)
 
     @model_validator(mode="after")
     def validate_configuration(self):

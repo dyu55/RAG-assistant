@@ -179,6 +179,10 @@ class KnowledgeService:
             expansion_terms=expansion_terms,
             graph_algorithm=self.settings.graph_algorithm,
             ppr_damping=self.settings.ppr_damping,
+            use_mrl=self.settings.mrl_enabled,
+            mrl_coarse_dim=self.settings.mrl_coarse_dim,
+            mrl_candidate_pool=self.settings.mrl_candidate_pool,
+            mrl_blend_alpha=self.settings.mrl_blend_alpha,
         )
         retrieved = time.perf_counter()
         if chunks:
@@ -219,6 +223,10 @@ class KnowledgeService:
                     expansion_terms=expansion_terms,
                     graph_algorithm=self.settings.graph_algorithm,
                     ppr_damping=self.settings.ppr_damping,
+                    use_mrl=self.settings.mrl_enabled,
+                    mrl_coarse_dim=self.settings.mrl_coarse_dim,
+                    mrl_candidate_pool=self.settings.mrl_candidate_pool,
+                    mrl_blend_alpha=self.settings.mrl_blend_alpha,
                 )
                 if fallback_evidence and max(
                     (e.relevance for e in fallback_evidence), default=0.0

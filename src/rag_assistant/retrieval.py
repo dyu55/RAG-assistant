@@ -37,13 +37,31 @@ def keyword_scores(
     return result
 
 
-def vector_scores(vector: list[float], chunks: list[Chunk]) -> dict[str, float]:
-    result = {}
+def vector_scores(
+    vector: list[float],
+    chunks: list[Chunk],
+    use_mrl: bool = True,
+    coarse_dim: int = 64,
+    candidate_pool: int = 60,
+    blend_alpha: float = 0.90,
+) -> dict[str, float]:
     for chunk in chunks:
         if len(chunk.vector) != len(vector):
             raise ValueError(
                 "Index embedding dimensions changed; reimport into a new data directory"
             )
+    if use_mrl and len(chunks) > candidate_pool and len(vector) >= 128:
+        from .mrl import mrl_funnel_vector_scores
+
+        return mrl_funnel_vector_scores(
+            query_vector=vector,
+            chunks=chunks,
+            coarse_dim=coarse_dim,
+            candidate_pool_size=candidate_pool,
+            blend_alpha=blend_alpha,
+        )
+    result = {}
+    for chunk in chunks:
         score = sum(a * b for a, b in zip(vector, chunk.vector, strict=True))
         if score > 0:
             result[chunk.id] = min(1.0, score)
@@ -112,6 +130,10 @@ def retrieve(
     expansion_terms: list[str] | None = None,
     graph_algorithm: str = "bfs",
     ppr_damping: float = 0.85,
+    use_mrl: bool = True,
+    mrl_coarse_dim: int = 64,
+    mrl_candidate_pool: int = 60,
+    mrl_blend_alpha: float = 0.90,
 ) -> list[Evidence]:
     if not chunks:
         return []
@@ -127,7 +149,19 @@ def retrieve(
         graph_job = executor.submit(
             graph_scores, question.text, chunks, 2, graph_algorithm, ppr_damping
         )
-        vector_job = executor.submit(vector_scores, vector, chunks) if vector is not None else None
+        vector_job = (
+            executor.submit(
+                vector_scores,
+                vector,
+                chunks,
+                use_mrl,
+                mrl_coarse_dim,
+                mrl_candidate_pool,
+                mrl_blend_alpha,
+            )
+            if vector is not None
+            else None
+        )
         keywords = keyword_job.result()
         graph, paths = graph_job.result()
         vectors = vector_job.result() if vector_job else {}
