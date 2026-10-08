@@ -172,9 +172,22 @@ class KnowledgeService:
             except Exception:
                 pass
 
+        search_chunks = chunks
+        raptor_tree_nodes = 0
+        if self.settings.raptor_enabled and len(chunks) >= 3:
+            from .raptor import expand_with_raptor_tree, is_raptor_thematic_query
+
+            if self.settings.raptor_always_search or is_raptor_thematic_query(question.text):
+                search_chunks, raptor_meta = expand_with_raptor_tree(
+                    chunks,
+                    max_layers=self.settings.raptor_max_layers,
+                    cluster_size=self.settings.raptor_cluster_size,
+                )
+                raptor_tree_nodes = len(raptor_meta)
+
         evidence = retrieve(
             effective_question,
-            chunks,
+            search_chunks,
             vector,
             expansion_terms=expansion_terms,
             graph_algorithm=self.settings.graph_algorithm,
@@ -185,6 +198,11 @@ class KnowledgeService:
             mrl_blend_alpha=self.settings.mrl_blend_alpha,
         )
         retrieved = time.perf_counter()
+        if any(e.chunk_id.startswith("raptor:") for e in evidence):
+            corrections.append("raptor_hierarchical_summary_retrieved")
+            warnings.append(
+                "RAPTOR multi-level tree index surfaced high-level abstractive thematic summaries."
+            )
         if chunks:
             from .hierarchical import build_parent_chunks, rollup_to_parent_context
 
@@ -218,7 +236,7 @@ class KnowledgeService:
                 )
                 fallback_evidence = retrieve(
                     fallback_q,
-                    chunks,
+                    search_chunks,
                     vector,
                     expansion_terms=expansion_terms,
                     graph_algorithm=self.settings.graph_algorithm,
@@ -356,6 +374,7 @@ class KnowledgeService:
             compression_ratio=compression_ratio,
             reflection=reflection,
             speculative=speculative_report,
+            raptor_nodes_count=raptor_tree_nodes,
         )
         self.semantic_cache.put(
             question=effective_question,

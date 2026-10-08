@@ -43,6 +43,10 @@ class Settings(BaseModel):
     mrl_coarse_dim: int = Field(default=64, ge=16, le=512)
     mrl_candidate_pool: int = Field(default=60, ge=10, le=500)
     mrl_blend_alpha: float = Field(default=0.90, ge=0.5, le=1.0)
+    raptor_enabled: bool = Field(default=True)
+    raptor_max_layers: int = Field(default=2, ge=1, le=4)
+    raptor_cluster_size: int = Field(default=4, ge=2, le=8)
+    raptor_always_search: bool = Field(default=False)
 
     @model_validator(mode="after")
     def validate_configuration(self):

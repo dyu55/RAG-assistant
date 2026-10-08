@@ -131,3 +131,4 @@ class Answer(BaseModel):
     compression_ratio: float | None = None
     reflection: ReflectionReport | None = None
     speculative: SpeculativeReport | None = None
+    raptor_nodes_count: int = 0
