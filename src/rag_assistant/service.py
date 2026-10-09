@@ -185,18 +185,69 @@ class KnowledgeService:
                 )
                 raptor_tree_nodes = len(raptor_meta)
 
-        evidence = retrieve(
-            effective_question,
-            search_chunks,
-            vector,
-            expansion_terms=expansion_terms,
-            graph_algorithm=self.settings.graph_algorithm,
-            ppr_damping=self.settings.ppr_damping,
-            use_mrl=self.settings.mrl_enabled,
-            mrl_coarse_dim=self.settings.mrl_coarse_dim,
-            mrl_candidate_pool=self.settings.mrl_candidate_pool,
-            mrl_blend_alpha=self.settings.mrl_blend_alpha,
-        )
+        multihop_trace = None
+        if self.settings.multihop_enabled:
+            from .multihop import detect_multihop_need, execute_multihop_search
+
+            if detect_multihop_need(effective_question.text):
+
+                def single_retrieve(q: Question) -> list[Evidence]:
+                    q_vec = None
+                    if q.mode in {"hybrid", "vector"}:
+                        try:
+                            q_vec = self.client.embed([q.text])[0]
+                        except Exception:
+                            q_vec = None
+                    return retrieve(
+                        q,
+                        search_chunks,
+                        q_vec,
+                        expansion_terms=expansion_terms,
+                        graph_algorithm=self.settings.graph_algorithm,
+                        ppr_damping=self.settings.ppr_damping,
+                        use_mrl=self.settings.mrl_enabled,
+                        mrl_coarse_dim=self.settings.mrl_coarse_dim,
+                        mrl_candidate_pool=self.settings.mrl_candidate_pool,
+                        mrl_blend_alpha=self.settings.mrl_blend_alpha,
+                    )
+
+                evidence, multihop_trace = execute_multihop_search(
+                    question=effective_question,
+                    chunks=search_chunks,
+                    retrieve_fn=single_retrieve,
+                    max_hops=self.settings.multihop_max_hops,
+                )
+                if multihop_trace and multihop_trace.hops_executed > 1:
+                    corrections.append("multihop_iterative_retrieval_executed")
+                    warnings.append(
+                        f"Multi-hop iterative reasoning bridged entities {multihop_trace.bridge_entities} across hops."
+                    )
+            else:
+                evidence = retrieve(
+                    effective_question,
+                    search_chunks,
+                    vector,
+                    expansion_terms=expansion_terms,
+                    graph_algorithm=self.settings.graph_algorithm,
+                    ppr_damping=self.settings.ppr_damping,
+                    use_mrl=self.settings.mrl_enabled,
+                    mrl_coarse_dim=self.settings.mrl_coarse_dim,
+                    mrl_candidate_pool=self.settings.mrl_candidate_pool,
+                    mrl_blend_alpha=self.settings.mrl_blend_alpha,
+                )
+        else:
+            evidence = retrieve(
+                effective_question,
+                search_chunks,
+                vector,
+                expansion_terms=expansion_terms,
+                graph_algorithm=self.settings.graph_algorithm,
+                ppr_damping=self.settings.ppr_damping,
+                use_mrl=self.settings.mrl_enabled,
+                mrl_coarse_dim=self.settings.mrl_coarse_dim,
+                mrl_candidate_pool=self.settings.mrl_candidate_pool,
+                mrl_blend_alpha=self.settings.mrl_blend_alpha,
+            )
         retrieved = time.perf_counter()
         if any(e.chunk_id.startswith("raptor:") for e in evidence):
             corrections.append("raptor_hierarchical_summary_retrieved")
@@ -375,6 +426,7 @@ class KnowledgeService:
             reflection=reflection,
             speculative=speculative_report,
             raptor_nodes_count=raptor_tree_nodes,
+            multihop=multihop_trace,
         )
         self.semantic_cache.put(
             question=effective_question,

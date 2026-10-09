@@ -111,6 +111,14 @@ class SpeculativeReport(BaseModel):
     rationale: str = ""
 
 
+class MultiHopTrace(BaseModel):
+    hops_executed: int = 1
+    bridge_entities: list[str] = Field(default_factory=list)
+    sub_queries: list[str] = Field(default_factory=list)
+    resolved: bool = True
+    reasoning: str = ""
+
+
 class Answer(BaseModel):
     id: str
     question: str
@@ -132,3 +140,4 @@ class Answer(BaseModel):
     reflection: ReflectionReport | None = None
     speculative: SpeculativeReport | None = None
     raptor_nodes_count: int = 0
+    multihop: MultiHopTrace | None = None

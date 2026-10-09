@@ -47,6 +47,8 @@ class Settings(BaseModel):
     raptor_max_layers: int = Field(default=2, ge=1, le=4)
     raptor_cluster_size: int = Field(default=4, ge=2, le=8)
     raptor_always_search: bool = Field(default=False)
+    multihop_enabled: bool = Field(default=True)
+    multihop_max_hops: int = Field(default=2, ge=1, le=4)
 
     @model_validator(mode="after")
     def validate_configuration(self):
