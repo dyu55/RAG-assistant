@@ -68,6 +68,14 @@ class KnowledgeService:
         if not chunks or len(chunks) > self.settings.max_chunks:
             raise ValueError("Document has no chunks or exceeds the configured index limit")
         vectors = self.client.embed([chunk.text for chunk in chunks])
+        if self.settings.late_chunking_enabled and len(chunks) > 1:
+            from .late_chunking import apply_late_chunking
+
+            vectors = apply_late_chunking(
+                chunks=chunks,
+                chunk_vectors=vectors,
+                context_weight=self.settings.late_chunking_weight,
+            )
         for chunk, vector in zip(chunks, vectors, strict=True):
             chunk.vector = vector
         return self.store.replace(

@@ -49,6 +49,8 @@ class Settings(BaseModel):
     raptor_always_search: bool = Field(default=False)
     multihop_enabled: bool = Field(default=True)
     multihop_max_hops: int = Field(default=2, ge=1, le=4)
+    late_chunking_enabled: bool = Field(default=True)
+    late_chunking_weight: float = Field(default=0.20, ge=0.0, le=0.5)
 
     @model_validator(mode="after")
     def validate_configuration(self):
