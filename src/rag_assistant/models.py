@@ -119,6 +119,24 @@ class MultiHopTrace(BaseModel):
     reasoning: str = ""
 
 
+class FlareStep(BaseModel):
+    lookahead_text: str
+    query_generated: str
+    retrieved_source_id: str | None = None
+    confidence_score: float = 0.0
+    grounded: bool = False
+
+
+class FlareTrace(BaseModel):
+    enabled: bool = True
+    iterations: int = 0
+    active_retrievals: list[FlareStep] = Field(default_factory=list)
+    lookahead_queries: list[str] = Field(default_factory=list)
+    supplementary_evidence_ids: list[str] = Field(default_factory=list)
+    regrounded_claims_count: int = 0
+    reasoning: str = ""
+
+
 class Answer(BaseModel):
     id: str
     question: str
@@ -141,3 +159,4 @@ class Answer(BaseModel):
     speculative: SpeculativeReport | None = None
     raptor_nodes_count: int = 0
     multihop: MultiHopTrace | None = None
+    flare: FlareTrace | None = None

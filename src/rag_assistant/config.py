@@ -51,6 +51,9 @@ class Settings(BaseModel):
     multihop_max_hops: int = Field(default=2, ge=1, le=4)
     late_chunking_enabled: bool = Field(default=True)
     late_chunking_weight: float = Field(default=0.20, ge=0.0, le=0.5)
+    flare_enabled: bool = Field(default=True)
+    flare_confidence_threshold: float = Field(default=0.60, ge=0.0, le=1.0)
+    flare_max_lookaheads: int = Field(default=2, ge=1, le=5)
 
     @model_validator(mode="after")
     def validate_configuration(self):

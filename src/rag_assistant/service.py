@@ -367,6 +367,44 @@ class KnowledgeService:
                     "Model service unavailable or returned invalid JSON; showing source excerpts."
                 )
         generated = time.perf_counter()
+        flare_trace = None
+        if self.settings.flare_enabled and draft.claims:
+            from .flare import execute_flare_active_retrieval
+
+            def retrieve_supplementary(q: Question) -> list[Evidence]:
+                q_vec = None
+                if q.mode in {"hybrid", "vector"}:
+                    try:
+                        q_vec = self.client.embed([q.text])[0]
+                    except Exception:
+                        q_vec = None
+                return retrieve(
+                    q,
+                    search_chunks,
+                    q_vec,
+                    expansion_terms=expansion_terms,
+                    graph_algorithm=self.settings.graph_algorithm,
+                    ppr_damping=self.settings.ppr_damping,
+                    use_mrl=self.settings.mrl_enabled,
+                    mrl_coarse_dim=self.settings.mrl_coarse_dim,
+                    mrl_candidate_pool=self.settings.mrl_candidate_pool,
+                    mrl_blend_alpha=self.settings.mrl_blend_alpha,
+                )
+
+            draft, evidence, flare_trace = execute_flare_active_retrieval(
+                question=question.text,
+                draft=draft,
+                evidence=evidence,
+                retrieve_fn=retrieve_supplementary,
+                max_lookaheads=self.settings.flare_max_lookaheads,
+                confidence_threshold=self.settings.flare_confidence_threshold,
+            )
+            if flare_trace and flare_trace.regrounded_claims_count > 0:
+                corrections.append("flare_active_lookahead_retrieval")
+                warnings.append(
+                    f"FLARE active retrieval fetched supplementary evidence for {flare_trace.regrounded_claims_count} lookahead statement(s)."
+                )
+
         from .correction import rescue_unsupported_draft
 
         draft, is_rescued, reason = rescue_unsupported_draft(question.text, draft, evidence, verify)
@@ -435,6 +473,7 @@ class KnowledgeService:
             speculative=speculative_report,
             raptor_nodes_count=raptor_tree_nodes,
             multihop=multihop_trace,
+            flare=flare_trace,
         )
         self.semantic_cache.put(
             question=effective_question,
